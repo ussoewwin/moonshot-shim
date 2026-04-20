@@ -1,0 +1,13 @@
+{
+  "name": "moonshot-shim",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Local proxy that injects reasoning_content into assistant.tool_calls messages so OpenAI-compatible clients (Cursor, etc.) can use Moonshot Kimi K2.6 thinking model with tool calling.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "undici": "^7.16.0"
+  }
+}

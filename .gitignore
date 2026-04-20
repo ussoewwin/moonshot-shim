@@ -1,0 +1,18 @@
+# Binaries
+cloudflared.exe
+
+# Runtime logs
+moonshot-shim.log
+moonshot-shim.log.1
+
+# Dependencies
+node_modules/
+
+# Temporary / test artifacts
+sse-payload.json
+sse-smoke.txt
+config.yml
+
+# OS files
+.DS_Store
+Thumbs.db
