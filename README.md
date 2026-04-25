@@ -30,7 +30,6 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 - [Resilience Features](#resilience-features)
 - [Operational Notes](#operational-notes)
 - [Troubleshooting](#troubleshooting)
-- [Prompt Cache Optimization](#prompt-cache-optimization)
 - [License](#license)
 
 ---
@@ -237,7 +236,6 @@ node test-echo.mjs
 
 - **Placeholder value**: The shim injects `" "` (a single space) as `reasoning_content`. Moonshot only checks field presence, not content validity. If Moonshot ever tightens validation, this workaround will break.
 - **Security**: The shim forwards your `Authorization` header directly to Moonshot. Requests without a valid Moonshot key are rejected with 401 by Moonshot itself. Keep your tunnel URL private.
-- **Cache efficiency**: Use the same thread, same model, and a fixed placeholder value to maximize Moonshot's prompt cache hit rate (6× cheaper than misses).
 
 ## Troubleshooting
 
