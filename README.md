@@ -13,11 +13,18 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 - [Features](#features)
 - [Supported Clients](#supported-clients)
 - [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Two Tunnel Methods](#two-tunnel-methods)
-  - [A. Cloudflare Quick Tunnel (temporary URL)](#a-cloudflare-quick-tunnel-temporary-url)
-  - [B. Tailscale Funnel (fixed URL)](#b-tailscale-funnel-fixed-url)
-- [Cursor Settings](#cursor-settings)
+- [Quick Start — Shim Only](#quick-start--shim-only)
+- [Method A: Cloudflare Quick Tunnel](#method-a-cloudflare-quick-tunnel)
+  - [A-1. Install cloudflared](#a-1-install-cloudflared)
+  - [A-2. Start shim + tunnel](#a-2-start-shim--tunnel)
+  - [A-3. Cursor Settings](#a-3-cursor-settings)
+  - [A-4. After reboot](#a-4-after-reboot)
+- [Method B: Tailscale Funnel](#method-b-tailscale-funnel)
+  - [B-1. Install Tailscale](#b-1-install-tailscale)
+  - [B-2. Enable Funnel](#b-2-enable-funnel)
+  - [B-3. Start shim + funnel](#b-3-start-shim--funnel)
+  - [B-4. Cursor Settings](#b-4-cursor-settings)
+  - [B-5. Auto-start on logon](#b-5-auto-start-on-logon)
 - [Environment Variables](#environment-variables)
 - [Verification](#verification)
 - [Resilience Features](#resilience-features)
@@ -48,11 +55,16 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 
 ## Prerequisites
 
+Regardless of which tunnel method you choose, you need:
+
 - [Node.js](https://nodejs.org/) (v18+ recommended)
 - A [Moonshot AI](https://platform.kimi.ai/) API key
-- For external exposure: either [Cloudflare Tunnel (`cloudflared`)](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) or [Tailscale](https://tailscale.com/) with Funnel enabled
 
-## Quick Start
+Then choose **one** of the two methods below.
+
+---
+
+## Quick Start — Shim Only
 
 ```bash
 # 1. Clone or copy this folder
@@ -66,53 +78,122 @@ node server.js
 # → listening on http://127.0.0.1:8787
 ```
 
-Since Cursor's cloud servers block private IPs (`127.0.0.1`) via SSRF protection, you need to expose the shim externally. Choose one of the two methods below.
+Since Cursor's cloud servers block private IPs (`127.0.0.1`) via SSRF protection, you need to expose the shim externally. Choose **Method A** or **Method B** below.
 
 ---
 
-## Two Tunnel Methods
-
-### A. Cloudflare Quick Tunnel (temporary URL)
+## Method A: Cloudflare Quick Tunnel
 
 Best for quick tests. The URL changes on every restart.
 
+### A-1. Install cloudflared
+
+`cloudflared.exe` is **not** included in this repo (see `.gitignore`). Download it manually:
+
+1. Go to [cloudflared releases](https://github.com/cloudflare/cloudflared/releases)
+2. Download `cloudflared-windows-amd64.exe`
+3. Rename to `cloudflared.exe` and place it in the `moonshot-shim` folder
+
+### A-2. Start shim + tunnel
+
+Open two terminals.
+
+**Terminal 1 — shim:**
 ```bash
-# In a second terminal, from the same folder
+node server.js
+```
+
+**Terminal 2 — tunnel:**
+```bash
 .\cloudflared.exe tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8787
 ```
 
-Copy the `https://*.trycloudflare.com` URL and append `/v1` for Cursor's **Override OpenAI Base URL**.
+Copy the `https://*.trycloudflare.com` URL.
 
-**Launcher**: Use `start-all.cmd` (opens a visible console showing the tunnel URL).
+Alternatively, use the launcher batch:
+```bash
+start-all.cmd
+```
 
-### B. Tailscale Funnel (fixed URL)
-
-Best for daily use. The URL never changes, and setup is fully automated after the first run.
-
-1. Install [Tailscale for Windows](https://tailscale.com/download/windows) and log in
-2. Enable Funnel in the [Tailscale admin console](https://login.tailscale.com/admin/settings/features)
-3. Run the launcher:
-   ```bash
-   .\start-tailscale.cmd
-   ```
-
-Your fixed URL will be `https://<machine>.<tail-XXXX>.ts.net/`.
-
-**Auto-start on logon**: Use `start-tailscale-hidden.vbs` in your Windows startup folder (`shell:startup`). This launches both the shim and Tailscale Funnel completely hidden (zero console windows).
-
----
-
-## Cursor Settings
+### A-3. Cursor Settings
 
 1. Open Cursor → Settings → Models
 2. Paste your Moonshot API key into **OpenAI API Key**
-3. Turn ON **Override OpenAI Base URL**, enter your tunnel URL with `/v1`:
+3. Turn ON **Override OpenAI Base URL**, enter the tunnel URL with `/v1`:
    ```
-   https://your-url.trycloudflare.com/v1     # Cloudflare
-   https://your-machine.tailXXXX.ts.net/v1   # Tailscale
+   https://<random>.trycloudflare.com/v1
    ```
 4. Click **+ Add Model** and add `kimi-k2.6`
 5. Select `kimi-k2.6` from the model picker in Agent mode
+
+### A-4. After reboot
+
+Cloudflare quick tunnel URLs change on every restart. After reboot:
+1. Run `start-all.cmd` again
+2. Copy the new URL into Cursor's Override OpenAI Base URL
+
+---
+
+## Method B: Tailscale Funnel
+
+Best for daily use. The URL never changes, and setup is fully automated after the first run.
+
+### B-1. Install Tailscale
+
+1. Download and install [Tailscale for Windows](https://tailscale.com/download/windows)
+2. Launch Tailscale and sign in with your account (Microsoft, Google, GitHub, or email)
+3. Wait until the system tray icon shows **Connected**
+
+### B-2. Enable Funnel
+
+1. Open the [Tailscale admin console](https://login.tailscale.com/admin/settings/features)
+2. Find **Funnel** and turn it **ON**
+3. (Optional but recommended) Set `tailscaled` Windows service to **Automatic (Delayed Start)**:
+   ```powershell
+   Set-Service tailscaled -StartupType Automatic
+   ```
+
+### B-3. Start shim + funnel
+
+```bash
+start-tailscale.cmd
+```
+
+This will:
+1. Start the shim on `127.0.0.1:8787` (if not already running)
+2. Register `tailscale funnel --bg 8787`
+3. Verify the public URL is reachable
+
+Your fixed URL will be `https://<machine>.<tail-XXXX>.ts.net/`.
+
+### B-4. Cursor Settings
+
+1. Open Cursor → Settings → Models
+2. Paste your Moonshot API key into **OpenAI API Key**
+3. Turn ON **Override OpenAI Base URL**, enter the funnel URL with `/v1`:
+   ```
+   https://<machine>.<tail-XXXX>.ts.net/v1
+   ```
+4. Click **+ Add Model** and add `kimi-k2.6`
+5. Select `kimi-k2.6` from the model picker in Agent mode
+
+### B-5. Auto-start on logon
+
+Use `start-tailscale-hidden.vbs` in your Windows startup folder (`shell:startup`). This launches both the shim and Tailscale Funnel completely hidden (zero console windows).
+
+```powershell
+$shell = New-Object -ComObject WScript.Shell
+$startup = $shell.SpecialFolders("Startup")
+$shortcut = $shell.CreateShortcut("$startup\Start-MoonshotShim-Tailscale-Hidden.lnk")
+$shortcut.TargetPath = "C:\path\to\moonshot-shim\start-tailscale-hidden.vbs"
+$shortcut.WorkingDirectory = "C:\path\to\moonshot-shim"
+$shortcut.WindowStyle = 7
+$shortcut.Save()
+```
+
+After setup, PC reboots are fully automatic: Tailscale service starts → Funnel restores → shim starts → Cursor works with the same URL forever.
+
+---
 
 ## Environment Variables
 
