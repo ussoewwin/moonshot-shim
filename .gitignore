@@ -16,3 +16,8 @@ config.yml
 # OS files
 .DS_Store
 Thumbs.db
+
+# Japanese docs (keep repo English-only)
+*.md
+!README.md
+!*.en.md
