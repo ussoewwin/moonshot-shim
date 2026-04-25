@@ -249,17 +249,6 @@ node test-echo.mjs
 | `connection refused` | cloudflared crashed | Restart `cloudflared` and update Cursor URL |
 | `502` from shim | shim crashed | Restart `node server.js` |
 
-## Prompt Cache Optimization
-
-Moonshot prompt cache pricing:
-- Cache HIT: $0.16 / 1M tokens
-- Cache MISS: $0.95 / 1M tokens
-
-Tips:
-1. Load heavy context once at the start of a thread
-2. Continue in the same thread; avoid `+ New Agent` mid-conversation
-3. When switching topics, ask the model to summarize, then paste only the summary into a new thread
-
 ## License
 
 MIT
