@@ -14,6 +14,7 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 - [Supported Clients](#supported-clients)
 - [Prerequisites](#prerequisites)
 - [Quick Start — Shim Only](#quick-start--shim-only)
+- [Cloudflare vs Tailscale (Pros / Cons)](#cloudflare-vs-tailscale-pros--cons)
 - [Method A: Cloudflare Quick Tunnel](#method-a-cloudflare-quick-tunnel)
   - [A-1. Install cloudflared](#a-1-install-cloudflared)
   - [A-2. Start shim + tunnel](#a-2-start-shim--tunnel)
@@ -78,6 +79,19 @@ node server.js
 ```
 
 Since Cursor's cloud servers block private IPs (`127.0.0.1`) via SSRF protection, you need to expose the shim externally. Choose **Method A** or **Method B** below.
+
+---
+
+## Cloudflare vs Tailscale (Pros / Cons)
+
+| Method | Pros | Cons |
+|---|---|---|
+| **Cloudflare Quick Tunnel** | Fast to start for one-off tests; no domain required; easy command-line launch (`cloudflared tunnel --url ...`) | URL changes every restart; manual Cursor URL update required after reboot; relies on Cloudflare quick-tunnel availability |
+| **Tailscale Funnel** | Fixed URL; best for daily use; supports fully hidden auto-start on Windows logon; no repeated URL copy/paste | Requires Tailscale client installation and account login; Funnel must be enabled in admin console; first-time setup is slightly longer |
+
+**Recommended choice**:
+- Use **Cloudflare** for quick experiments and temporary sessions.
+- Use **Tailscale** for stable day-to-day operation and automation.
 
 ---
 
