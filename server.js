@@ -42,8 +42,26 @@ const DEBUG = process.env.SHIM_DEBUG === '1';
 const PLACEHOLDER = ' ';
 const UPSTREAM_RETRIES = Math.max(0, parseInt(process.env.SHIM_UPSTREAM_RETRIES || '2', 10));
 const RETRY_BASE_MS = Math.max(50, parseInt(process.env.SHIM_RETRY_BASE_MS || '250', 10));
-const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '15000', 10));
+const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
+
+// --- security hardening (Phase 0) ----------------------------------------
+const ALLOWED_PATHS = new Set([
+  '/chat/completions',
+  '/models',
+  '/completions',
+  '/embeddings',
+  '/healthz',
+  '/_shim/healthz',
+]);
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'OPTIONS']);
+
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'x-xss-protection': '1; mode=block',
+  'referrer-policy': 'no-referrer',
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_PATH = process.env.SHIM_LOG || path.join(__dirname, 'moonshot-shim.log');
@@ -93,12 +111,30 @@ const stats = {
   err: 0,
   patched: 0, // total assistant messages patched
   byStatus: Object.create(null), // { 200: n, 429: n, 502: n, ... }
+  promptTokens: 0,
+  cachedTokens: 0,
+  completionTokens: 0,
+  usageReports: 0, // # of upstream responses that carried a usage block
   windowStart: Date.now(),
+};
+
+// Cumulative counters that are NOT reset per minute. Useful when reading the
+// log days later to see overall cache effectiveness.
+const lifetime = {
+  promptTokens: 0,
+  cachedTokens: 0,
+  completionTokens: 0,
+  usageReports: 0,
 };
 
 function bumpStatus(code) {
   const k = String(code);
   stats.byStatus[k] = (stats.byStatus[k] || 0) + 1;
+}
+
+function fmtPct(num, den) {
+  if (!den || den <= 0) return '-';
+  return ((num / den) * 100).toFixed(1) + '%';
 }
 
 setInterval(() => {
@@ -107,16 +143,103 @@ setInterval(() => {
     .sort((a, b) => Number(a[0]) - Number(b[0]))
     .map(([k, v]) => `${k}=${v}`)
     .join(',') || '-';
+  const winHit = fmtPct(stats.cachedTokens, stats.promptTokens);
+  const lifeHit = fmtPct(lifetime.cachedTokens, lifetime.promptTokens);
   log(
     `[summary] window=${elapsed}s req=${stats.req} err=${stats.err}` +
-      ` patched=${stats.patched} statuses=${statusStr}`,
+      ` patched=${stats.patched} statuses=${statusStr}` +
+      ` usage=${stats.usageReports} prompt=${stats.promptTokens}` +
+      ` cached=${stats.cachedTokens} comp=${stats.completionTokens}` +
+      ` hit=${winHit} lifetime[req=${lifetime.usageReports}` +
+      ` prompt=${lifetime.promptTokens} cached=${lifetime.cachedTokens}` +
+      ` comp=${lifetime.completionTokens} hit=${lifeHit}]`,
   );
   stats.req = 0;
   stats.err = 0;
   stats.patched = 0;
   stats.byStatus = Object.create(null);
+  stats.promptTokens = 0;
+  stats.cachedTokens = 0;
+  stats.completionTokens = 0;
+  stats.usageReports = 0;
   stats.windowStart = Date.now();
 }, 60_000).unref();
+
+// --- usage extraction (Moonshot / OpenAI compatible) ---------------------
+//
+// Both completions formats expose token usage:
+//   * non-stream JSON: { ..., "usage": { "prompt_tokens": N,
+//                                        "completion_tokens": M,
+//                                        "prompt_tokens_details": { "cached_tokens": K } } }
+//   * SSE: usage typically arrives in the FINAL data: line, e.g.
+//       data: {"choices":[],"usage":{...}}
+//       data: [DONE]
+//     Some Moonshot variants emit `cached_tokens` directly under usage.
+//
+// We accept either layout and silently ignore anything we cannot parse.
+
+function pickUsage(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const prompt = Number(usage.prompt_tokens) || 0;
+  const completion = Number(usage.completion_tokens) || 0;
+  let cached = 0;
+  if (usage.prompt_tokens_details && typeof usage.prompt_tokens_details === 'object') {
+    cached = Number(usage.prompt_tokens_details.cached_tokens) || 0;
+  }
+  if (!cached && usage.cached_tokens != null) {
+    cached = Number(usage.cached_tokens) || 0;
+  }
+  if (prompt === 0 && completion === 0 && cached === 0) return null;
+  return { prompt, cached, completion };
+}
+
+function recordUsage(u) {
+  if (!u) return;
+  stats.promptTokens += u.prompt;
+  stats.cachedTokens += u.cached;
+  stats.completionTokens += u.completion;
+  stats.usageReports++;
+  lifetime.promptTokens += u.prompt;
+  lifetime.cachedTokens += u.cached;
+  lifetime.completionTokens += u.completion;
+  lifetime.usageReports++;
+}
+
+// Scan a text buffer for the LAST `data: {...}` SSE event whose JSON
+// payload contains a `usage` object. Returns parsed usage or null.
+function extractUsageFromSSE(text) {
+  if (!text || typeof text !== 'string') return null;
+  // Walk lines from the end backwards (usage is typically last) and
+  // return the first `data: {...}` whose JSON has `.usage`.
+  const lines = text.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    try {
+      const obj = JSON.parse(payload);
+      if (obj && obj.usage) {
+        const u = pickUsage(obj.usage);
+        if (u) return u;
+      }
+    } catch {
+      // partial frame -> ignore
+    }
+  }
+  return null;
+}
+
+function extractUsageFromJSON(text) {
+  if (!text || typeof text !== 'string') return null;
+  try {
+    const obj = JSON.parse(text);
+    if (obj && obj.usage) return pickUsage(obj.usage);
+  } catch {
+    // not JSON or truncated -> ignore
+  }
+  return null;
+}
 
 // --- patcher --------------------------------------------------------------
 
@@ -256,15 +379,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // health probe (does not touch upstream)
+  // Phase 0: Path/Method whitelist
+  const barePath = url.pathname.startsWith('/v1/') ? url.pathname.slice(3) : url.pathname;
+  if (!ALLOWED_PATHS.has(barePath) || !ALLOWED_METHODS.has(req.method)) {
+    stats.err++;
+    bumpStatus(405);
+    const errHeaders = { 'content-type': 'application/json' };
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      errHeaders[key] = value;
+    }
+    safeWrite(res, '');
+    res.writeHead(405, errHeaders);
+    safeEnd(res, JSON.stringify({ error: 'path or method not allowed' }));
+    return;
+  }
+
+  // health probe (does not touch upstream) — minimal response
   if (url.pathname === '/healthz' || url.pathname === '/_shim/healthz') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({
-      ok: true,
-      uptimeSec: Math.round(process.uptime()),
-      target: TARGET,
-      pid: process.pid,
-    }));
+    const healthHeaders = { 'content-type': 'application/json' };
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      healthHeaders[key] = value;
+    }
+    res.writeHead(200, healthHeaders);
+    res.end(JSON.stringify({ status: 'ok' }));
     return;
   }
 
@@ -361,6 +498,11 @@ const server = http.createServer(async (req, res) => {
     respHeaders['cache-control'] = 'no-cache, no-transform';
   }
 
+  // Phase 0: Security headers on every response
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    respHeaders[key] = value;
+  }
+
   try {
     res.writeHead(upstream.statusCode, respHeaders);
   } catch (err) {
@@ -413,15 +555,41 @@ const server = http.createServer(async (req, res) => {
     keepAliveTimer.unref();
   }
 
+  // Capture (a small bounded suffix of) the upstream body so we can pull
+  // out the usage block at end-of-response without paying for unbounded
+  // memory on long SSE streams.
+  const USAGE_BUF_MAX = 64 * 1024; // last 64 KB is more than enough for a usage frame
+  let usageBuf = '';
+  function appendForUsage(chunkStr) {
+    if (!chunkStr) return;
+    usageBuf += chunkStr;
+    if (usageBuf.length > USAGE_BUF_MAX) {
+      usageBuf = usageBuf.slice(-USAGE_BUF_MAX);
+    }
+  }
+
   upstream.body.on('data', (c) => {
     if (safeWrite(res, c)) lastWriteAt = Date.now();
+    try { appendForUsage(c.toString('utf8')); } catch {}
   });
   upstream.body.on('end', () => {
     stopKeepAlive();
     safeEnd(res);
     const ms = Date.now() - started;
     const ka = isSSE && keepAliveCount > 0 ? ` keepalive=${keepAliveCount}` : '';
-    log(`${req.method} ${url.pathname} -> ${upstream.statusCode} ${ms}ms${patchInfo}${ka}`);
+    let usage = null;
+    try {
+      usage = isSSE ? extractUsageFromSSE(usageBuf) : extractUsageFromJSON(usageBuf);
+    } catch (err) {
+      log('USAGE PARSE ERROR', err.message);
+    }
+    let usageStr = '';
+    if (usage) {
+      recordUsage(usage);
+      const hit = fmtPct(usage.cached, usage.prompt);
+      usageStr = ` prompt=${usage.prompt} cached=${usage.cached} comp=${usage.completion} hit=${hit}`;
+    }
+    log(`${req.method} ${url.pathname} -> ${upstream.statusCode} ${ms}ms${patchInfo}${ka}${usageStr}`);
   });
   upstream.body.on('error', (err) => {
     stats.err++;
@@ -475,6 +643,7 @@ server.listen(PORT, HOST, () => {
   log(`log file: ${LOG_PATH}`);
   log('reasoning_content patcher: enabled (assistant.tool_calls -> placeholder " ")');
   log(`SSE keepalive: ${KEEPALIVE_INTERVAL_MS}ms  TCP keepalive: ${TCP_KEEPALIVE_MS}ms`);
+  log('cache hit accounting: enabled (parses usage from SSE / JSON responses)');
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
   log('point your client "Override OpenAI Base URL" at http://' + HOST + ':' + PORT + '/v1');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');

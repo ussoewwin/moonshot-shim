@@ -41,7 +41,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "Start-Sleep -Milliseconds 500;" ^
     "try {" ^
       "$r = Invoke-RestMethod 'http://127.0.0.1:8787/healthz' -TimeoutSec 2;" ^
-      "Write-Host ('[2/3] healthz OK pid={0} uptime={1}s' -f $r.pid, $r.uptimeSec) -ForegroundColor Green;" ^
+      "if ($r.status -eq 'ok') { Write-Host '[2/3] healthz OK' -ForegroundColor Green } else { throw 'unexpected healthz response' };" ^
       "$ok = $true; break" ^
     "} catch {}" ^
   "};" ^
@@ -62,7 +62,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "try {" ^
       "& $tsExe funnel --bg 8787 2>$null | Out-Null;" ^
       "$r = Invoke-RestMethod 'https://<your-funnel-domain>/healthz' -TimeoutSec 4;" ^
-      "Write-Host ('[3/3] public healthz OK pid={0} uptime={1}s' -f $r.pid, $r.uptimeSec) -ForegroundColor Green;" ^
+      "if ($r.status -eq 'ok') { Write-Host '[3/3] public healthz OK' -ForegroundColor Green } else { throw 'unexpected healthz response' };" ^
       "$ok = $true; break" ^
     "} catch {" ^
       "Start-Sleep -Seconds 2" ^
