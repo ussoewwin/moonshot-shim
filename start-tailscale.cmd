@@ -3,19 +3,22 @@ REM ============================================================
 REM  start-tailscale.cmd
 REM  ------------------------------------------------------------
 REM  One-shot launcher (fire-and-forget) for the Cursor <-> Kimi
-REM  K2.6 path using Tailscale Funnel (fixed URL).
+REM  K2.6 path using Tailscale Funnel (fixed URL) + Shared Secret.
+REM
+REM  Architecture:
+REM    Cursor -> https://<your-funnel-domain>/v1 (public)
+REM           -> Tailscale Funnel :443
+REM           -> inject-header-proxy :8788 (adds X-Shim-Key)
+REM           -> server.js :8787 (validates X-Shim-Key)
+REM           -> api.moonshot.ai/v1
 REM
 REM  Behavior:
-REM    [1/3] If port 8787 is not LISTEN, launch node server.js
-REM          hidden in the background.
-REM    [2/3] Poll /healthz for up to 5 seconds.
-REM    [3/3] Run `tailscale funnel --bg 8787` to register the
-REM          funnel config with the tailscaled Windows service.
-REM          The config is persisted by tailscaled; this command
-REM          exits immediately, no console window stays open.
+REM    [0/3] Generate or load _shim_secret.txt (auto, persistent)
+REM    [1/3] Launch server.js (:8787) + inject-header-proxy.mjs (:8788)
+REM    [2/3] Poll /healthz on :8787 for up to 5s
+REM    [3/3] Run `tailscale funnel --bg 8788` (funnel -> inject-header-proxy)
 REM
-REM  Fixed URL: https://<your-funnel-domain>/
-REM  Cursor -> Override OpenAI Base URL:
+REM  Cursor Override URL (unchanged):
 REM     https://<your-funnel-domain>/v1
 REM
 REM  This .cmd is intended to be invoked from start-tailscale-hidden.vbs
@@ -25,16 +28,43 @@ REM ============================================================
 setlocal
 cd /d "%~dp0"
 
-REM --- [1/3] Launch shim if not already on 8787 ---------------------
+REM --- [0/3] Generate or load shared secret -------------------------
+if not exist "_shim_secret.txt" (
+  powershell -NoProfile -Command ^
+  "$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create();" ^
+  "$bytes = [byte[]]::new(64);" ^
+  "$rng.GetBytes($bytes);" ^
+  "[System.Convert]::ToBase64String($bytes)" > "_shim_secret.txt"
+)
+set /p SHIM_SECRET=<_shim_secret.txt
+set SHIM_SECRET=%SHIM_SECRET%
+
+REM --- [1/3] Launch shim + inject-header-proxy -------------------
+REM server.js on :8787, inject-header-proxy.mjs on :8788
+REM funnel points to :8788 later.
+REM Both launched hidden.
+
+REM First check if inject-header-proxy (:8788) is already running
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "if (Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue) {" ^
-    "Write-Host '[1/3] shim already running on 8787' -ForegroundColor Yellow" ^
+  "$shimRunning = Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue;" ^
+  "$proxyRunning = Get-NetTCPConnection -LocalPort 8788 -State Listen -ErrorAction SilentlyContinue;" ^
+  "if ($proxyRunning) {" ^
+    "Write-Host '[1/3] inject-header-proxy already running on 8788' -ForegroundColor Yellow" ^
   "} else {" ^
-    "Start-Process -FilePath 'node' -ArgumentList 'server.js' -WorkingDirectory '%~dp0' -WindowStyle Hidden;" ^
-    "Write-Host '[1/3] shim launched (hidden)' -ForegroundColor Green" ^
+    "$secret = (Get-Content '%~dp0_shim_secret.txt' -Raw).Trim();" ^
+    "$env:SHIM_SECRET = $secret;" ^
+    "if (-not $shimRunning) {" ^
+      "Start-Process -FilePath 'node' -ArgumentList 'server.js' -WorkingDirectory '%~dp0' -WindowStyle Hidden;" ^
+      "Write-Host '[1/3] shim (server.js) launched on 8787' -ForegroundColor Green;" ^
+      "Start-Sleep -Milliseconds 800" ^
+    "} else {" ^
+      "Write-Host '[1/3] shim already running on 8787' -ForegroundColor Yellow" ^
+    "};" ^
+    "Start-Process -FilePath 'node' -ArgumentList 'inject-header-proxy.mjs' -WorkingDirectory '%~dp0' -WindowStyle Hidden;" ^
+    "Write-Host '[1/3] inject-header-proxy launched on 8788' -ForegroundColor Green" ^
   "}"
 
-REM --- [2/3] Wait for /healthz -------------------------------------
+REM --- [2/3] Wait for /healthz on shim (:8787) --------------------
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ok = $false;" ^
   "for ($i = 0; $i -lt 10; $i++) {" ^
@@ -53,14 +83,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM --- [3/3] Register funnel config (one-shot, persisted by tailscaled) ---
+REM --- [3/3] Register funnel config -> :8788 (inject-header-proxy) ---
 REM Retry a few times in case tailscaled is not yet ready right after logon.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$tsExe = 'C:\Program Files\Tailscale\tailscale.exe';" ^
   "$ok = $false;" ^
   "for ($i = 0; $i -lt 30; $i++) {" ^
     "try {" ^
-      "& $tsExe funnel --bg 8787 2>$null | Out-Null;" ^
+      "& $tsExe funnel --bg 8788 2>$null | Out-Null;" ^
       "$r = Invoke-RestMethod 'https://<your-funnel-domain>/healthz' -TimeoutSec 4;" ^
       "if ($r.status -eq 'ok') { Write-Host '[3/3] public healthz OK' -ForegroundColor Green } else { throw 'unexpected healthz response' };" ^
       "$ok = $true; break" ^

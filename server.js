@@ -45,6 +45,13 @@ const RETRY_BASE_MS = Math.max(50, parseInt(process.env.SHIM_RETRY_BASE_MS || '2
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
 
+// --- Shared Secret (Phase 1) --------------------------------------------
+const SHIM_SECRET = process.env.SHIM_SECRET || '';
+if (SHIM_SECRET && SHIM_SECRET.length < 32) {
+  console.error('FATAL: SHIM_SECRET must be at least 32 characters');
+  process.exit(1);
+}
+
 // --- security hardening (Phase 0) ----------------------------------------
 const ALLOWED_PATHS = new Set([
   '/chat/completions',
@@ -402,6 +409,20 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, healthHeaders);
     res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+
+  // --- Phase 1: Shared Secret check (after healthz, before upstream) --------
+  if (SHIM_SECRET && req.headers['x-shim-key'] !== SHIM_SECRET) {
+    stats.err++;
+    bumpStatus(403);
+    const errHeaders = { 'content-type': 'application/json' };
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      errHeaders[key] = value;
+    }
+    res.writeHead(403, errHeaders);
+    safeEnd(res, JSON.stringify({ error: 'shim secret required or invalid' }));
+    log('SHIM SECRET REJECT', req.method, req.url, 'missing or invalid key');
     return;
   }
 
