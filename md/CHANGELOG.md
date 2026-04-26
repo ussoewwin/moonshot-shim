@@ -4,6 +4,8 @@
 
 ## v1.01 (2026-04-27) — Phase 0 Security Hardening
 
+> Release notes: [v1.01](https://github.com/<github-username>/moonshot-shim/releases/tag/v1.01) (TBD)
+
 - **Path/Method Whitelist**: 6 paths + 3 methods only; else 405
 - **Minimal /healthz**: Returns `{"status":"ok"}` only (no uptime/target/pid leak)
 - **Security Headers**: `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy` on all responses
