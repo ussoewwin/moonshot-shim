@@ -5,6 +5,9 @@ cloudflared.exe
 moonshot-shim.log
 moonshot-shim.log.1
 
+# Shared secret (auto-generated at first run)
+_shim_secret.txt
+
 # Dependencies
 node_modules/
 
