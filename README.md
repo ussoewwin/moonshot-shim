@@ -30,6 +30,7 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 - [Verification](#verification)
 - [Resilience Features](#resilience-features)
 - [Operational Notes](#operational-notes)
+- [Changelog](#changelog)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
@@ -221,16 +222,22 @@ After setup, PC reboots are fully automatic: Tailscale service starts → Funnel
 | `SHIM_UPSTREAM_RETRIES` | `2` | Retry count for transient upstream errors |
 | `SHIM_RETRY_BASE_MS` | `250` | Base delay for exponential backoff (ms) |
 
+## Changelog
+
+See [md/CHANGELOG.md](md/CHANGELOG.md) for the full changelog.
+
+---
+
 ## Verification
 
 ```bash
 # Local health check
 curl http://127.0.0.1:8787/healthz
-# → {"ok":true,"uptimeSec":...,"target":"...","pid":...}
+# → {"status":"ok"}
 
 # Public health check (via your tunnel URL)
 curl https://your-url.ts.net/healthz
-# → same response
+# → {"status":"ok"}
 
 # Regression test for the patcher
 node test-echo.mjs
