@@ -2,6 +2,19 @@
 
 ---
 
+## v1.02 (2026-04-27) — Phase 1 Shared Secret Authentication
+
+> Release notes: [v1.02](https://github.com/<github-username>/moonshot-shim/releases/tag/v1.02) (TBD)
+
+- **Shared Secret Authentication** (Measure 1): `X-Shim-Key` header required for all non-healthz requests; missing/invalid → 403
+- **inject-header-proxy.mjs**: New thin proxy (port 8788) that auto-injects `X-Shim-Key` into every request; zero npm dependencies
+- **Two-proxy chain**: Tailscale Funnel → :8788 (inject-header-proxy) → :8787 (server.js with validation) → Moonshot
+- **Auto-generated secret**: `start-tailscale.cmd` creates `_shim_secret.txt` (64 random bytes, base64) on first run; persists across reboots
+- **Gitignore**: `_shim_secret.txt` added to `.gitignore` to prevent credential leakage
+- **recover-moonshot-shim skill**: Updated for port 8788 and dual-process recovery
+
+---
+
 ## v1.01 (2026-04-27) — Phase 0 Security Hardening
 
 > Release notes: [v1.01](https://github.com/<github-username>/moonshot-shim/releases/tag/v1.01) (TBD)
