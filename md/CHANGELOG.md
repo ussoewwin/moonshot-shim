@@ -2,6 +2,16 @@
 
 ---
 
+## v1.0.3 (2026-04-27) — Startup 80070002 Fix
+
+> Release notes: [v1.0.3](https://github.com/<github-username>/moonshot-shim/releases/tag/v1.0.3) (TBD)
+
+- Fixed `wscript.exe` startup error `80070002` by removing hard-coded placeholder path usage in `start-tailscale-hidden.vbs`
+- Updated launcher to resolve `start-tailscale.cmd` relative to `WScript.ScriptFullName`, making startup robust against folder moves
+- Added detailed incident and fix documentation: `md/STARTUP_80070002_ROOT_CAUSE_AND_FIX.en.md`
+
+---
+
 ## v1.02 (2026-04-27) — Phase 1 Shared Secret Authentication
 
 > Release notes: [v1.02](https://github.com/<github-username>/moonshot-shim/releases/tag/v1.02) (TBD)
