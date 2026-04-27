@@ -41,7 +41,7 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 - **Node.js** v18+ ([nodejs.org](https://nodejs.org/))
 - **A Moonshot AI API key** ([platform.kimi.ai](https://platform.kimi.ai/))
 - **One of the following tunnels**:
-  - **Cloudflare**: `cloudflared.exe` (already included in this repo)
+  - **Cloudflare**: `cloudflared.exe` (download required; see [Method A](#method-a-cloudflare-quick-tunnel-temporary-url))
   - **Tailscale**: [Tailscale for Windows](https://tailscale.com/download/windows) installed and logged in
 
 ---
@@ -117,9 +117,13 @@ Cursor's cloud servers block private IPs (`127.0.0.1`) via SSRF protection. You 
 
 Best for one-off tests. The URL changes every restart.
 
-`cloudflared.exe` is **already included** in this repo. No download needed.
+`cloudflared.exe` is **not** tracked by git (see `.gitignore`). Download it separately:
 
-Skip to [Step 5](#5-start-the-shim-stack).
+1. Go to [cloudflared releases](https://github.com/cloudflare/cloudflared/releases)
+2. Download `cloudflared-windows-amd64.exe`
+3. Rename to `cloudflared.exe` and place it in the `moonshot-shim` folder
+
+After downloading, use either [Step 5 Method A](#method-a-cloudflare-quick-tunnel-temporary-url) (two terminals) or `start-all.cmd` (one terminal, auto-restart).
 
 #### Method B: Tailscale Funnel (fixed URL, recommended)
 
@@ -273,7 +277,7 @@ Cursor -> https://random.trycloudflare.com/v1  (cloudflared)
 - **Generated automatically** by `start-tailscale.cmd` on first run
 - **64 cryptographically random bytes**, base64-encoded (88 characters)
 - **Must never be committed** (already in `.gitignore`)
-- **Read by**: `server.js` (for validation) and `inject-header-proxy.mjs` (for injection)
+- **Read by**: `inject-header-proxy.mjs` (reads directly for injection); `server.js` receives it via `SHIM_SECRET` environment variable (set by `start-tailscale.cmd` or manually)
 
 If you delete `_shim_secret.txt`, `start-tailscale.cmd` will generate a new one on next run. However, this invalidates any existing `inject-header-proxy.mjs` instance until it is restarted.
 
