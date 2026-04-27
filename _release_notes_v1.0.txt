@@ -1,0 +1,10 @@
+Initial release of moonshot-shim.
+
+A local HTTP proxy that enables Kimi K2.6 in Cursor IDE by injecting reasoning_content placeholders and providing SSE keepalive for long-thinking sessions.
+
+Features:
+- reasoning_content patcher for tool-calling compatibility
+- SSE keepalive and TCP keepalive for connection stability
+- Cache hit rate logging
+- Automatic retry for upstream network errors
+- Support for both Cloudflare Quick Tunnel and Tailscale Funnel
