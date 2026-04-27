@@ -42,6 +42,8 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
 - **Idempotent**: Same input → same output; doesn't touch messages that already have valid `reasoning_content`
 - **Transparent**: Forwards auth headers, SSE streaming, errors, and all other API features unchanged
 - **Resilient**: Persistent logging, auto-retry on upstream errors, SSE keepalive, TCP keep-alive, and graceful error handling
+- **Authenticated gateway (Phase 1)**: Requests require `X-Shim-Key` at `server.js`; unauthorized requests are rejected with `403`
+- **Header injection proxy**: `inject-header-proxy.mjs` (port `8788`) injects `X-Shim-Key` for Cursor compatibility
 - **Dual tunnel support**: Works with both Cloudflare quick tunnels and Tailscale Funnel
 
 ## Supported Clients
@@ -175,10 +177,16 @@ start-tailscale.cmd
 
 This will:
 1. Start the shim on `127.0.0.1:8787` (if not already running)
-2. Register `tailscale funnel --bg 8787`
-3. Verify the public URL is reachable
+2. Start `inject-header-proxy.mjs` on `127.0.0.1:8788`
+3. Register `tailscale funnel --bg 8788`
+4. Verify the public URL is reachable
 
 Your fixed URL will be `https://<machine>.<tail-XXXX>.ts.net/`.
+
+Internal request path after v1.0.2:
+```text
+Cursor -> Funnel :443 -> inject-header-proxy :8788 -> server.js :8787 -> Moonshot
+```
 
 ### B-4. Cursor Settings
 
@@ -215,6 +223,8 @@ After setup, PC reboots are fully automatic: Tailscale service starts → Funnel
 |----------|---------|-------------|
 | `SHIM_PORT` | `8787` | Shim listen port |
 | `SHIM_HOST` | `127.0.0.1` | Shim listen address |
+| `SHIM_SECRET` | (unset) | Shared secret used by `server.js` to validate `X-Shim-Key` |
+| `INJECT_PORT` | `8788` | `inject-header-proxy.mjs` listen port |
 | `SHIM_TARGET` | `https://api.moonshot.ai/v1` | Upstream API. Change to `https://api.deepseek.com/v1` for DeepSeek-R1 |
 | `SHIM_DEBUG` | (unset) | Set to `1` for verbose request/response logging |
 | `SHIM_KEEPALIVE_MS` | `15000` | SSE keepalive comment interval (ms) |
@@ -225,6 +235,10 @@ After setup, PC reboots are fully automatic: Tailscale service starts → Funnel
 ## Changelog
 
 See [md/CHANGELOG.md](md/CHANGELOG.md) for the full changelog.
+
+Security docs:
+- [Phase 0 implemented measures](md/SECURITY_IMPLEMENTED.en.md)
+- [Phase 1 shared secret implementation](md/SHARED_SECRET_IMPLEMENTED.en.md)
 
 ---
 
@@ -256,7 +270,9 @@ node test-echo.mjs
 ## Operational Notes
 
 - **Placeholder value**: The shim injects `" "` (a single space) as `reasoning_content`. Moonshot only checks field presence, not content validity. If Moonshot ever tightens validation, this workaround will break.
-- **Security**: The shim forwards your `Authorization` header directly to Moonshot. Requests without a valid Moonshot key are rejected with 401 by Moonshot itself. Keep your tunnel URL private.
+- **Phase 1 security model**: `server.js` requires a valid `X-Shim-Key` (`SHIM_SECRET`) for all non-healthz requests. Unknown callers are rejected with `403` before upstream forwarding.
+- **Secret file**: `_shim_secret.txt` is generated automatically by `start-tailscale.cmd` and must remain uncommitted (`.gitignore`).
+- **Security baseline**: Keep your tunnel URL private even with shared-secret protection.
 
 ## Troubleshooting
 
@@ -264,6 +280,7 @@ node test-echo.mjs
 |---------|-------|-----|
 | `400 reasoning_content is missing` | Shim not running or not reached | Start shim; verify `healthz` |
 | `ssrf_blocked` in Cursor | Using `127.0.0.1` directly in Cursor | Use a tunnel (Cloudflare or Tailscale) |
+| `403 shim secret required or invalid` | Request reached `server.js` without valid `X-Shim-Key` | Ensure traffic goes through `inject-header-proxy.mjs` (`:8788`) and `_shim_secret.txt` exists |
 | `Network Error` during long thinking | Moonshot thinking time (60–150s) exceeds proxy/client timeout | SSE keepalive and TCP keep-alive are active by default; check `moonshot-shim.log` for `keepalive=N` |
 | `connection refused` | cloudflared crashed | Restart `cloudflared` and update Cursor URL |
 | `502` from shim | shim crashed | Restart `node server.js` |
