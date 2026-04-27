@@ -6,7 +6,7 @@ REM  One-shot launcher (fire-and-forget) for the Cursor <-> Kimi
 REM  K2.6 path using Tailscale Funnel (fixed URL) + Shared Secret.
 REM
 REM  Architecture:
-REM    Cursor -> https://<your-funnel-domain>/v1 (public)
+REM    Cursor -> https://ussoewwin.tail7d4c3e.ts.net/v1 (public)
 REM           -> Tailscale Funnel :443
 REM           -> inject-header-proxy :8788 (adds X-Shim-Key)
 REM           -> server.js :8787 (validates X-Shim-Key)
@@ -19,7 +19,7 @@ REM    [2/3] Poll /healthz on :8787 for up to 5s
 REM    [3/3] Run `tailscale funnel --bg 8788` (funnel -> inject-header-proxy)
 REM
 REM  Cursor Override URL (unchanged):
-REM     https://<your-funnel-domain>/v1
+REM     https://ussoewwin.tail7d4c3e.ts.net/v1
 REM
 REM  This .cmd is intended to be invoked from start-tailscale-hidden.vbs
 REM  on logon, but can also be run manually for verification.
@@ -91,7 +91,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "for ($i = 0; $i -lt 30; $i++) {" ^
     "try {" ^
       "& $tsExe funnel --bg 8788 2>$null | Out-Null;" ^
-      "$r = Invoke-RestMethod 'https://<your-funnel-domain>/healthz' -TimeoutSec 4;" ^
+      "$r = Invoke-RestMethod 'https://ussoewwin.tail7d4c3e.ts.net/healthz' -TimeoutSec 4;" ^
       "if ($r.status -eq 'ok') { Write-Host '[3/3] public healthz OK' -ForegroundColor Green } else { throw 'unexpected healthz response' };" ^
       "$ok = $true; break" ^
     "} catch {" ^

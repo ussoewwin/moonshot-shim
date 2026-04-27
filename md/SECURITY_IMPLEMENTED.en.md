@@ -1,7 +1,7 @@
 # Security Hardening — Implemented Measures
 
 > **Version**: 2026-04-27  
-> **Target**: `<repo-path>`  
+> **Target**: `D:\USERFILES\GitHub\moonshot-shim`  
 > **Scope**: All measures that have been implemented and are currently active  
 > **Language**: English
 
@@ -152,7 +152,7 @@ Reduces the `/healthz` endpoint response to the bare minimum: only `{"status":"o
 
 ### Why it matters
 
-The `/healthz` endpoint is accessible via the public Tailscale Funnel URL (`https://<your-funnel-domain>/healthz`). Anyone who discovers the URL could previously learn:
+The `/healthz` endpoint is accessible via the public Tailscale Funnel URL (`https://ussoewwin.tail7d4c3e.ts.net/healthz`). Anyone who discovers the URL could previously learn:
 
 1. **`uptimeSec`** — Confirms the shim is running and for how long (useful for reconnaissance).
 2. **`target`** — Reveals the upstream Moonshot API URL (`api.moonshot.ai/v1`), providing a target for direct attacks.
@@ -383,12 +383,12 @@ $r.Headers
 
 ```powershell
 # These tests go through the public HTTPS URL
-$r = Invoke-RestMethod -Uri 'https://<your-funnel-domain>/healthz' -TimeoutSec 6
+$r = Invoke-RestMethod -Uri 'https://ussoewwin.tail7d4c3e.ts.net/healthz' -TimeoutSec 6
 $r | ConvertTo-Json
 # → {"status":"ok"}
 
 # Unauthorized path via public URL
-Invoke-WebRequest -Uri 'https://<your-funnel-domain>/debug' -UseBasicParsing -TimeoutSec 6
+Invoke-WebRequest -Uri 'https://ussoewwin.tail7d4c3e.ts.net/debug' -UseBasicParsing -TimeoutSec 6
 # → 405 Method Not Allowed
 ```
 
