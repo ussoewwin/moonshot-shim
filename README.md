@@ -100,17 +100,14 @@ This installs `undici` (the only production dependency).
 
 ### 3. Configure environment
 
-The shim needs your **Moonshot API key**. You have two ways to provide it:
+The shim does **not** need your API key in an environment variable or in the source code. The API key is configured **in Cursor** (see [Step 6](#6-configure-cursor)).
 
-**Option A — Environment variable (recommended for manual use):**
-```powershell
-$env:MOONSHOT_API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
+The shim only needs the following on your machine:
 
-**Option B — Hardcoded in `server.js` (not recommended, but works):**
-Edit `server.js` and find the line that reads `const API_KEY = process.env.MOONSHOT_API_KEY || '';`. Replace with your key. Keep the file private.
+- `SHIM_SECRET` — auto-generated on first run (see [Understanding the Secret File](#understanding-the-secret-file))
+- `MOONSHOT_API_KEY` — set **in Cursor**, not on the shim
 
-> **No other env vars are required for basic operation.** `SHIM_SECRET` is auto-generated (see below).
+> **No env vars are required on the shim for basic operation.**
 
 ### 4. Choose a tunnel method
 
@@ -294,7 +291,6 @@ $rng.GetBytes($bytes)
 $secret = [System.Convert]::ToBase64String($bytes)
 $secret | Set-Content _shim_secret.txt -NoNewline
 $env:SHIM_SECRET = $secret
-$env:MOONSHOT_API_KEY = "sk-your-key-here"
 
 # Terminal 1 — start shim
 node server.js
@@ -315,8 +311,8 @@ All variables are optional unless marked **Required**.
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
-| `MOONSHOT_API_KEY` | (unset) | **Yes** | Your Moonshot API key |
 | `SHIM_SECRET` | (auto from `_shim_secret.txt`) | Yes (for Tailscale) | Shared secret for `X-Shim-Key` validation |
+| `MOONSHOT_API_KEY` | (set in Cursor) | **Yes** | Your Moonshot API key. Configure in **Cursor → Settings → Models → OpenAI API Key**, not on the shim |
 | `SHIM_PORT` | `8787` | No | Shim listen port |
 | `SHIM_HOST` | `127.0.0.1` | No | Shim listen address |
 | `INJECT_PORT` | `8788` | No | `inject-header-proxy.mjs` listen port |
