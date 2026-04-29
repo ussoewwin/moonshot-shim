@@ -2,9 +2,21 @@
 
 ---
 
+## v1.0.4 (2026-04-29) — Cursor Model Validation Workaround
+
+> Release notes: [v1.0.4](https://github.com/ussoewwin/moonshot-shim/releases/tag/v1.0.4) (to be updated)
+
+- Added Cursor compatibility workaround for `Model name is not valid: "kimi-k2.6"`:
+  - `server.js` now forces `json.model` to `kimi-k2.6` on chat-completion requests
+  - `GET /v1/models` response is rewritten to ensure `kimi-k2.6` is visible in the model catalog
+  - Catalog response is returned as HTTP 200 for strict client-side validators while preserving upstream auth behavior for generation requests
+- Detailed incident write-up (local doc): `md/CURSOR_MODEL_VALIDATION_FIX.md` (release note body to be added later)
+
+---
+
 ## v1.0.3 (2026-04-27) — Startup 80070002 Fix
 
-> Release notes: [v1.0.3](https://github.com/<github-username>/moonshot-shim/releases/tag/v1.0.3) (TBD)
+> Release notes: [v1.0.3](https://github.com/ussoewwin/moonshot-shim/releases/tag/v1.0.3) (to be updated)
 
 - Fixed `wscript.exe` startup error `80070002` by removing hard-coded placeholder path usage in `start-tailscale-hidden.vbs`
 - Updated launcher to resolve `start-tailscale.cmd` relative to `WScript.ScriptFullName`, making startup robust against folder moves
