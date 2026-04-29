@@ -44,6 +44,7 @@ const UPSTREAM_RETRIES = Math.max(0, parseInt(process.env.SHIM_UPSTREAM_RETRIES 
 const RETRY_BASE_MS = Math.max(50, parseInt(process.env.SHIM_RETRY_BASE_MS || '250', 10));
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
+const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || 'kimi-k2.6').trim();
 
 // --- Shared Secret (Phase 1) --------------------------------------------
 const SHIM_SECRET = process.env.SHIM_SECRET || '';
@@ -457,6 +458,9 @@ const server = http.createServer(async (req, res) => {
     } catch {
       // not JSON -> pass through untouched
     }
+    if (json && typeof json === 'object' && FORCE_MODEL) {
+      json.model = FORCE_MODEL;
+    }
     if (json && Array.isArray(json.messages)) {
       const n = patchMessagesForMoonshot(json);
       stats.patched += n;
@@ -509,6 +513,45 @@ const server = http.createServer(async (req, res) => {
   const respHeaders = copyHeaders(upstream.headers);
   const ct = String(upstream.headers['content-type'] || '');
   const isSSE = ct.includes('text/event-stream');
+
+  // Cursor workaround: force model visibility in /v1/models response.
+  if (req.method === 'GET' && barePath === '/models' && ct.includes('application/json')) {
+    try {
+      const txt = await upstream.body.text();
+      let obj = null;
+      try { obj = JSON.parse(txt); } catch {}
+
+      if (!obj || typeof obj !== 'object') obj = { object: 'list', data: [] };
+      if (!Array.isArray(obj.data)) obj.data = [];
+      if (FORCE_MODEL) {
+        const exists = obj.data.some((m) => m && m.id === FORCE_MODEL);
+        if (!exists) {
+          obj.data.push({
+            id: FORCE_MODEL,
+            object: 'model',
+            created: Math.floor(Date.now() / 1000),
+            owned_by: 'shim',
+          });
+        }
+      }
+
+      const payload = Buffer.from(JSON.stringify(obj), 'utf8');
+      respHeaders['content-type'] = 'application/json';
+      respHeaders['content-length'] = String(payload.length);
+      for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+        respHeaders[key] = value;
+      }
+      // Return 200 so strict clients can always parse model catalog.
+      // Actual generation requests are still authenticated at upstream.
+      res.writeHead(200, respHeaders);
+      safeWrite(res, payload);
+      safeEnd(res);
+      log(`${req.method} ${url.pathname} -> 200 ${Date.now() - started}ms models+forced=${FORCE_MODEL} upstream=${upstream.statusCode}`);
+      return;
+    } catch (err) {
+      log('MODELS REWRITE ERROR', err.message);
+    }
+  }
 
   // For SSE responses, discourage intermediate proxies from buffering and
   // make explicit that nothing along the path should hold chunks back.
