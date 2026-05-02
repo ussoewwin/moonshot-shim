@@ -148,6 +148,35 @@ Your fixed URL will be:
 https://<machine-name>.<tail-XXXX>.ts.net
 ```
 
+---
+
+### Tailscale vs Cloudflare: which to use
+
+| Topic | Tailscale Funnel (Method B) | Cloudflare Quick Tunnel (Method A) |
+|------|------------------------------|-------------------------------------|
+| **Public URL** | Fixed (`https://<machine>.<tail-XXXX>.ts.net`) | New random host each restart (`https://*.trycloudflare.com`) |
+| **Best for** | Daily / long-lived setup | One-off tests |
+| **Windows logon auto-start** | Yes — `start-tailscale-hidden.vbs` (see [§8](#8-auto-start-on-windows-logon-optional)) | Not practical (URL changes every run) |
+| **Security** | `X-Shim-Key` required via `inject-header-proxy.mjs` on `:8788` | No shared secret; `cloudflared` hits `:8787` directly |
+| **Port path** | `:443` → `:8788` → `:8787` | Random public port → `:8787` |
+| **Cursor base URL** | Set once and keep | Re-copy URL after each tunnel restart |
+
+#### Why Tailscale is recommended
+
+1. **Stable URL** — Reboots do not change your hostname; you do not keep editing Cursor’s override URL.
+2. **Auto-start** — Drop `start-tailscale-hidden.vbs` into the user Startup folder (§8) to bring up shim + Funnel in the background. Quick Tunnel URLs rotate, so “auto-start” buys little.
+3. **Shared-secret gate** — The Funnel URL is public; `inject-header-proxy.mjs` injects `X-Shim-Key` on every hop so strangers cannot hit `server.js` on `:8787` without the secret. The Cloudflare path skips that gate.
+
+#### When Cloudflare fits
+
+- First-time smoke test before Tailscale is ready.
+- Machines without Tailscale installed.
+- You want a throwaway public URL for a short session.
+
+Switch any time: `switch-tunnel.cmd tailscale` or `switch-tunnel.cmd cloudflare`.
+
+---
+
 ### 5. Start the shim stack
 
 #### Method A — Cloudflare (one command)
