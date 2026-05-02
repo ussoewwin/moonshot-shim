@@ -4,6 +4,11 @@ cloudflared.exe
 # Runtime logs
 moonshot-shim.log
 moonshot-shim.log.1
+cloudflared-quick.log
+cloudflared-quick.log.err
+
+# Cloudflare Quick Tunnel PID (written by start-cloudflare.ps1)
+cloudflared-quick.pid
 
 # Shared secret (auto-generated at first run)
 _shim_secret.txt

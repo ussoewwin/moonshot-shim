@@ -20,6 +20,7 @@ A lightweight local HTTP proxy (shim) that enables **Cursor IDE** (and other Ope
     - [Method A: Cloudflare Quick Tunnel (temporary URL)](#method-a-cloudflare-quick-tunnel-temporary-url)
     - [Method B: Tailscale Funnel (fixed URL, recommended)](#method-b-tailscale-funnel-fixed-url-recommended)
   - [5. Start the shim stack](#5-start-the-shim-stack)
+    - [Switching between Cloudflare and Tailscale](#switching-between-cloudflare-and-tailscale)
   - [6. Configure Cursor](#6-configure-cursor)
   - [7. Verify connectivity](#7-verify-connectivity)
   - [8. Auto-start on Windows logon (optional)](#8-auto-start-on-windows-logon-optional)
@@ -123,7 +124,11 @@ Best for one-off tests. The URL changes every restart.
 2. Download `cloudflared-windows-amd64.exe`
 3. Rename to `cloudflared.exe` and place it in the `moonshot-shim` folder
 
-After downloading, use either [Step 5 Method A](#method-a-cloudflare-quick-tunnel-temporary-url) (two terminals) or `start-all.cmd` (one terminal, auto-restart).
+After downloading, run **`start-cloudflare.cmd`** from the repo folder (one double-click or one terminal). It starts the same **`:8788` inject-header-proxy stack** as Tailscale, then launches `cloudflared` against `:8788` and prints the `https://*.trycloudflare.com` URL.
+
+To switch between Tailscale and Cloudflare without hunting scripts, use **`switch-tunnel.cmd tailscale`** or **`switch-tunnel.cmd cloudflare`**. See **`tunnel-status.cmd`** for a one-screen status dump.
+
+> **Legacy:** `start-all.cmd` still exists but targets `:8787` directly and does **not** match the shared-secret + inject-header-proxy architecture used since v1.02. Prefer `start-cloudflare.cmd`.
 
 #### Method B: Tailscale Funnel (fixed URL, recommended)
 
@@ -145,21 +150,15 @@ https://<machine-name>.<tail-XXXX>.ts.net
 
 ### 5. Start the shim stack
 
-#### Method A — Cloudflare (manual two-terminal start)
+#### Method A — Cloudflare (one command)
 
-**Terminal 1:**
 ```powershell
-node server.js
+.\start-cloudflare.cmd
 ```
 
-**Terminal 2:**
-```powershell
-.\cloudflared.exe tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8787
-```
+This mirrors `start-tailscale.cmd` for steps **[0–2]** (secret, `server.js` on `:8787`, `inject-header-proxy.mjs` on `:8788`, `/healthz` wait), then starts **`cloudflared` against `:8788`** in the background and prints the public `https://*.trycloudflare.com` URL. Copy that URL, append **`/v1`**, paste into Cursor → Override OpenAI Base URL, then **Verify**.
 
-Copy the `https://*.trycloudflare.com` URL.
-
-> Note: Cloudflare path does **not** use `inject-header-proxy.mjs` because the quick tunnel points directly to `:8787`. The secret check is bypassed for local health checks only.
+**Manual two-terminal alternative** (experts only): you may still run `node server.js` plus `inject-header-proxy.mjs` by hand, then `.\cloudflared.exe tunnel --url http://127.0.0.1:8788 --protocol http2`. Do **not** point `cloudflared` at `:8787` unless you also supply `X-Shim-Key` on every request (Cursor cannot).
 
 #### Method B — Tailscale (one-command start)
 
@@ -177,6 +176,16 @@ This batch file performs the following automatically:
 6. **Polls the public URL `/healthz`** to confirm end-to-end reachability
 
 If any step fails, the batch exits with code `1` and prints a red error message.
+
+#### Switching between Cloudflare and Tailscale
+
+| Goal | Command |
+|------|---------|
+| Show ports, healthz, funnel, Quick Tunnel PID | `.\tunnel-status.cmd` |
+| Use **Cloudflare** (ephemeral URL) | `.\switch-tunnel.cmd cloudflare` |
+| Use **Tailscale** (fixed URL) | `.\switch-tunnel.cmd tailscale` |
+
+`switch-tunnel.cmd` stops the **other** tunnel first (Tailscale Funnel reset vs. stop this repo’s `cloudflared` PID file), then starts the target path. It does **not** restart the Node shim stack unless it was missing.
 
 ### 6. Configure Cursor
 

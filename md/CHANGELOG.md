@@ -2,6 +2,26 @@
 
 ---
 
+## v1.0.6 (2026-05-02) — Tailscale / Cloudflare switcher scripts
+
+> Release notes: [v1.0.6](https://github.com/ussoewwin/moonshot-shim/releases/tag/v1.0.6)
+
+- Added **`start-cloudflare.cmd`** + **`start-cloudflare.ps1`**: same local stack as Tailscale (`:8788` inject-header-proxy → `:8787` shim); `cloudflared` quick tunnel targets **`:8788`** (not `:8787`), matching `SHIM_SECRET` + header injection.
+- Added **`stop-cloudflare.cmd`** / **`stop-cloudflare.ps1`** (PID file `cloudflared-quick.pid`), **`stop-tailscale.cmd`** (`tailscale funnel reset`), **`tunnel-status.cmd`** / **`tunnel-status.ps1`**, and **`switch-tunnel.cmd`** (`tailscale` \| `cloudflare` \| `status`).
+- README: Cloudflare instructions updated; **`start-all.cmd`** documented as legacy (`:8787` direct, not aligned with v1.02+ secret stack).
+- `.gitignore`: `cloudflared-quick.log`, `cloudflared-quick.log.err`, `cloudflared-quick.pid`.
+
+---
+
+## v1.0.5 (2026-05-02) — `/v1/models` rewrite without upstream JSON Content-Type
+
+> Release notes: [v1.0.5](https://github.com/ussoewwin/moonshot-shim/releases/tag/v1.0.5)
+
+- `GET /v1/models` catalog rewrite now runs whenever `FORCE_MODEL` is set, **not only** when the upstream response declares `application/json`. If Moonshot returns 401 with HTML or plain text, Cursor still receives HTTP 200 and a JSON body that includes `kimi-k2.6`, avoiding intermittent `Model name is not valid: "kimi-k2.6"` when the client validates the catalog.
+- If rewriting the upstream body throws, the shim returns a minimal synthetic catalog (only `FORCE_MODEL`) as HTTP 200.
+
+---
+
 ## v1.0.4 (2026-04-29) — Cursor Model Validation Workaround
 
 > Release notes: [v1.0.4](https://github.com/ussoewwin/moonshot-shim/releases/tag/v1.0.4) (to be updated)
