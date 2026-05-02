@@ -515,28 +515,33 @@ const server = http.createServer(async (req, res) => {
   const isSSE = ct.includes('text/event-stream');
 
   // Cursor workaround: force model visibility in /v1/models response.
-  if (req.method === 'GET' && barePath === '/models' && ct.includes('application/json')) {
+  // IMPORTANT: Do not gate on upstream Content-Type. Moonshot may return
+  // 401 with non-JSON (or empty) bodies; Cursor still needs a parseable
+  // catalog or it shows "Model name is not valid" client-side.
+  if (req.method === 'GET' && barePath === '/models' && FORCE_MODEL) {
     try {
       const txt = await upstream.body.text();
       let obj = null;
-      try { obj = JSON.parse(txt); } catch {}
+      try {
+        obj = JSON.parse(txt);
+      } catch {
+        obj = null;
+      }
 
       if (!obj || typeof obj !== 'object') obj = { object: 'list', data: [] };
       if (!Array.isArray(obj.data)) obj.data = [];
-      if (FORCE_MODEL) {
-        const exists = obj.data.some((m) => m && m.id === FORCE_MODEL);
-        if (!exists) {
-          obj.data.push({
-            id: FORCE_MODEL,
-            object: 'model',
-            created: Math.floor(Date.now() / 1000),
-            owned_by: 'shim',
-          });
-        }
+      const exists = obj.data.some((m) => m && m.id === FORCE_MODEL);
+      if (!exists) {
+        obj.data.push({
+          id: FORCE_MODEL,
+          object: 'model',
+          created: Math.floor(Date.now() / 1000),
+          owned_by: 'shim',
+        });
       }
 
       const payload = Buffer.from(JSON.stringify(obj), 'utf8');
-      respHeaders['content-type'] = 'application/json';
+      respHeaders['content-type'] = 'application/json; charset=utf-8';
       respHeaders['content-length'] = String(payload.length);
       for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
         respHeaders[key] = value;
@@ -546,10 +551,42 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, respHeaders);
       safeWrite(res, payload);
       safeEnd(res);
-      log(`${req.method} ${url.pathname} -> 200 ${Date.now() - started}ms models+forced=${FORCE_MODEL} upstream=${upstream.statusCode}`);
+      log(
+        `${req.method} ${url.pathname} -> 200 ${Date.now() - started}ms models+forced=${FORCE_MODEL} upstream=${upstream.statusCode} upstream_ct=${JSON.stringify(ct)}`,
+      );
       return;
     } catch (err) {
       log('MODELS REWRITE ERROR', err.message);
+      try {
+        const fallback = {
+          object: 'list',
+          data: [
+            {
+              id: FORCE_MODEL,
+              object: 'model',
+              created: Math.floor(Date.now() / 1000),
+              owned_by: 'shim',
+            },
+          ],
+        };
+        const payload = Buffer.from(JSON.stringify(fallback), 'utf8');
+        const hdr = {
+          'content-type': 'application/json; charset=utf-8',
+          'content-length': String(payload.length),
+        };
+        for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+          hdr[key] = value;
+        }
+        res.writeHead(200, hdr);
+        safeWrite(res, payload);
+        safeEnd(res);
+        log(
+          `${req.method} ${url.pathname} -> 200 ${Date.now() - started}ms models+fallback=${FORCE_MODEL} after_error=${JSON.stringify(String(err.message))}`,
+        );
+        return;
+      } catch (e2) {
+        log('MODELS FALLBACK ERROR', e2.message);
+      }
     }
   }
 
