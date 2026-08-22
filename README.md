@@ -408,7 +408,9 @@ Get-NetTCPConnection -LocalPort 8788 -State Listen
 
 ## Operational Notes
 
-- **Placeholder value**: The shim injects `" "` (a single space) as `reasoning_content`. Moonshot only checks field presence, not content validity. If Moonshot ever tightens validation, this workaround will break.
+- **Placeholder value**: When a client drops `reasoning_content`, the shim injects `" "` (a single space) to satisfy Moonshot's field-presence check. Moonshot only checks field presence, not content validity.
+- **Reasoning echo (cache-first)**: By default the shim also *captures* the real `reasoning_content` from Moonshot's responses and re-injects it verbatim into later turns (instead of the `" "` placeholder). This keeps Moonshot's automatic prefix cache maximally hit and preserves the model's reasoning continuity across tool calls. Disable with `SHIM_REASONING_ECHO=0`. The in-memory store is capped at `SHIM_REASONING_STORE_MAX` entries (default 500).
+- **Cache accounting**: The shim parses Moonshot's usage block and logs `prompt / cached / fresh / reasoning / hit` per request (plus a per-minute summary). Moonshot reports cache reads as a *top-level* `usage.cached_tokens` (not the OpenAI-style `prompt_tokens_details.cached_tokens`); reasoning/thinking tokens appear under `completion_tokens_details.reasoning_tokens`. `fresh = prompt - cached` is what is actually billed at the full input rate.
 - **Phase 1 security model**: `server.js` requires a valid `X-Shim-Key` (`SHIM_SECRET`) for all non-healthz requests. Unknown callers are rejected with `403` before upstream forwarding.
 - **Secret file**: `_shim_secret.txt` is generated automatically by `start-tailscale.cmd` and must remain uncommitted (`.gitignore`).
 - **Security baseline**: Keep your tunnel URL private even with shared-secret protection.

@@ -40,11 +40,14 @@ const HOST = process.env.SHIM_HOST || '127.0.0.1';
 const TARGET = (process.env.SHIM_TARGET || 'https://api.moonshot.ai/v1').replace(/\/+$/, '');
 const DEBUG = process.env.SHIM_DEBUG === '1';
 const PLACEHOLDER = ' ';
+const REASONING_ECHO = (process.env.SHIM_REASONING_ECHO || '1') !== '0';
+const REASONING_STORE_MAX = Math.max(1, parseInt(process.env.SHIM_REASONING_STORE_MAX || '500', 10));
+const reasonStore = new Map();
 const UPSTREAM_RETRIES = Math.max(0, parseInt(process.env.SHIM_UPSTREAM_RETRIES || '2', 10));
 const RETRY_BASE_MS = Math.max(50, parseInt(process.env.SHIM_RETRY_BASE_MS || '250', 10));
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
-const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || 'kimi-k2.6').trim();
+const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || '').trim();
 
 // --- Shared Secret (Phase 1) --------------------------------------------
 const SHIM_SECRET = process.env.SHIM_SECRET || '';
@@ -122,6 +125,7 @@ const stats = {
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
+  reasoningTokens: 0,
   usageReports: 0, // # of upstream responses that carried a usage block
   windowStart: Date.now(),
 };
@@ -132,6 +136,7 @@ const lifetime = {
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
+  reasoningTokens: 0,
   usageReports: 0,
 };
 
@@ -157,7 +162,8 @@ setInterval(() => {
     `[summary] window=${elapsed}s req=${stats.req} err=${stats.err}` +
       ` patched=${stats.patched} statuses=${statusStr}` +
       ` usage=${stats.usageReports} prompt=${stats.promptTokens}` +
-      ` cached=${stats.cachedTokens} comp=${stats.completionTokens}` +
+      ` cached=${stats.cachedTokens} reasoning=${stats.reasoningTokens}` +
+      ` comp=${stats.completionTokens}` +
       ` hit=${winHit} lifetime[req=${lifetime.usageReports}` +
       ` prompt=${lifetime.promptTokens} cached=${lifetime.cachedTokens}` +
       ` comp=${lifetime.completionTokens} hit=${lifeHit}]`,
@@ -168,6 +174,7 @@ setInterval(() => {
   stats.byStatus = Object.create(null);
   stats.promptTokens = 0;
   stats.cachedTokens = 0;
+  stats.reasoningTokens = 0;
   stats.completionTokens = 0;
   stats.usageReports = 0;
   stats.windowStart = Date.now();
@@ -188,17 +195,32 @@ setInterval(() => {
 
 function pickUsage(usage) {
   if (!usage || typeof usage !== 'object') return null;
-  const prompt = Number(usage.prompt_tokens) || 0;
-  const completion = Number(usage.completion_tokens) || 0;
-  let cached = 0;
-  if (usage.prompt_tokens_details && typeof usage.prompt_tokens_details === 'object') {
-    cached = Number(usage.prompt_tokens_details.cached_tokens) || 0;
+  const num = (v) => Number(v) || 0;
+  const prompt = num(usage.prompt_tokens);
+  const completion = num(usage.completion_tokens);
+  // Cache-read tokens differ per provider. Kimi / Moonshot reports them at
+  // the TOP LEVEL (usage.cached_tokens); OpenAI / Azure nest them under
+  // usage.prompt_tokens_details.cached_tokens. Check Moonshot's shape first
+  // so the hit rate is never under-reported.
+  let cached = num(usage.cached_tokens);
+  if (!cached) {
+    const ptd = usage.prompt_tokens_details;
+    if (ptd && typeof ptd === 'object') cached = num(ptd.cached_tokens);
   }
-  if (!cached && usage.cached_tokens != null) {
-    cached = Number(usage.cached_tokens) || 0;
+  if (!cached) {
+    const itd = usage.input_tokens_details;
+    if (itd && typeof itd === 'object') cached = num(itd.cached_tokens);
   }
-  if (prompt === 0 && completion === 0 && cached === 0) return null;
-  return { prompt, cached, completion };
+  // Thinking / reasoning tokens are billed separately by Kimi reasoning
+  // models and surface under completion_tokens_details.reasoning_tokens.
+  let reasoning = 0;
+  const ctd = usage.completion_tokens_details;
+  if (ctd && typeof ctd === 'object') reasoning = num(ctd.reasoning_tokens);
+  if (prompt === 0 && completion === 0 && cached === 0 && reasoning === 0) return null;
+  // Kimi's prompt_tokens INCLUDE the cached prefix; fresh = tokens actually
+  // billed at the full input rate.
+  const fresh = prompt >= cached ? prompt - cached : prompt;
+  return { prompt, cached, completion, reasoning, fresh };
 }
 
 function recordUsage(u) {
@@ -206,10 +228,12 @@ function recordUsage(u) {
   stats.promptTokens += u.prompt;
   stats.cachedTokens += u.cached;
   stats.completionTokens += u.completion;
+  stats.reasoningTokens += u.reasoning;
   stats.usageReports++;
   lifetime.promptTokens += u.prompt;
   lifetime.cachedTokens += u.cached;
   lifetime.completionTokens += u.completion;
+  lifetime.reasoningTokens += u.reasoning;
   lifetime.usageReports++;
 }
 
@@ -249,6 +273,118 @@ function extractUsageFromJSON(text) {
   return null;
 }
 
+// --- reasoning_content echo -----------------------------------------------
+// Kimi reasoning models emit `reasoning_content` (the thinking trace) on
+// every assistant message. Standard OpenAI-compatible clients (AutoClaw,
+// Cursor, ...) drop it when echoing history back, so the shim injects a
+// placeholder to satisfy Moonshot's validation. To maximise Moonshot's
+// automatic prefix cache (and keep the model's reasoning continuous across
+// turns), we ALSO capture the real `reasoning_content` from upstream
+// responses and echo it back verbatim when a later request re-sends the
+// same assistant message. Set SHIM_REASONING_ECHO=0 to disable.
+
+function stableStringify(v) {
+  if (v === null || v === undefined) return 'null';
+  if (typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+  const keys = Object.keys(v).sort();
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+}
+
+function fingerprintMessage(msg) {
+  if (!msg) return '';
+  return [
+    stableStringify(msg.content == null ? null : msg.content),
+    stableStringify(Array.isArray(msg.tool_calls) && msg.tool_calls.length ? msg.tool_calls : null),
+  ].join('|');
+}
+
+function rememberReasoning(msg) {
+  if (!msg || msg.role !== 'assistant') return;
+  const rc = msg.reasoning_content;
+  if (typeof rc !== 'string' || rc.trim() === '') return;
+  const fp = fingerprintMessage(msg);
+  if (!fp || fp === 'null|null') return;
+  reasonStore.delete(fp);
+  reasonStore.set(fp, rc);
+  if (reasonStore.size > REASONING_STORE_MAX) {
+    const oldest = reasonStore.keys().next().value;
+    reasonStore.delete(oldest);
+  }
+}
+
+function recallReasoning(msg) {
+  if (!msg) return null;
+  return reasonStore.get(fingerprintMessage(msg)) || null;
+}
+
+function newCaptureCtx() {
+  return { role: null, reasoning: '', content: '', toolCalls: new Map() };
+}
+
+function captureReasoningChunk(cap, text) {
+  if (!cap || !text || REASONING_ECHO === false) return;
+  const lines = String(text).split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    let obj;
+    try { obj = JSON.parse(payload); } catch { continue; }
+    if (!obj || !Array.isArray(obj.choices)) continue;
+    for (const ch of obj.choices) {
+      const d = ch.delta;
+      if (!d || typeof d !== 'object') continue;
+      if (d.role) cap.role = d.role;
+      if (typeof d.reasoning_content === 'string') cap.reasoning += d.reasoning_content;
+      if (typeof d.content === 'string') cap.content += d.content;
+      if (Array.isArray(d.tool_calls)) {
+        for (const tc of d.tool_calls) {
+          if (!tc || typeof tc !== 'object') continue;
+          const idx = tc.index || 0;
+          let e = cap.toolCalls.get(idx);
+          if (!e) { e = { id: '', type: '', name: '', args: '' }; cap.toolCalls.set(idx, e); }
+          if (tc.id) e.id = tc.id;
+          if (tc.type) e.type = tc.type;
+          if (tc.function && typeof tc.function === 'object') {
+            if (tc.function.name) e.name += tc.function.name;
+            if (typeof tc.function.arguments === 'string') e.args += tc.function.arguments;
+          }
+        }
+      }
+    }
+  }
+}
+
+function finalizeReasoningCapture(cap) {
+  if (!cap || REASONING_ECHO === false) return;
+  if (cap.reasoning.trim() === '') return;
+  const toolCalls = [...cap.toolCalls.values()]
+    .filter((e) => e.id || e.name)
+    .map((e) => ({
+      id: e.id,
+      type: e.type || 'function',
+      function: { name: e.name, arguments: e.args },
+    }));
+  rememberReasoning({
+    role: 'assistant',
+    content: cap.content,
+    tool_calls: toolCalls.length ? toolCalls : undefined,
+    reasoning_content: cap.reasoning,
+  });
+}
+
+function captureReasoningFromJSON(text) {
+  if (!text || REASONING_ECHO === false) return;
+  try {
+    const obj = JSON.parse(text);
+    if (!obj || !Array.isArray(obj.choices)) return;
+    for (const ch of obj.choices) {
+      if (ch && ch.message) rememberReasoning(ch.message);
+    }
+  } catch {}
+}
+
 // --- patcher --------------------------------------------------------------
 
 /**
@@ -261,9 +397,19 @@ function patchMessagesForMoonshot(body) {
   let patched = 0;
   for (const msg of body.messages) {
     if (!msg || msg.role !== 'assistant') continue;
-    if (!Array.isArray(msg.tool_calls) || msg.tool_calls.length === 0) continue;
     const rc = msg.reasoning_content;
-    if (typeof rc !== 'string' || rc.trim() === '') {
+    const missing = typeof rc !== 'string' || rc.trim() === '';
+    if (!missing) continue;
+    const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+    if (REASONING_ECHO) {
+      const recalled = recallReasoning(msg);
+      if (recalled) {
+        msg.reasoning_content = recalled;
+        patched++;
+        continue;
+      }
+    }
+    if (hasToolCalls) {
       msg.reasoning_content = PLACEHOLDER;
       patched++;
     }
@@ -661,6 +807,7 @@ const server = http.createServer(async (req, res) => {
   // memory on long SSE streams.
   const USAGE_BUF_MAX = 64 * 1024; // last 64 KB is more than enough for a usage frame
   let usageBuf = '';
+  const cap = newCaptureCtx();
   function appendForUsage(chunkStr) {
     if (!chunkStr) return;
     usageBuf += chunkStr;
@@ -671,7 +818,9 @@ const server = http.createServer(async (req, res) => {
 
   upstream.body.on('data', (c) => {
     if (safeWrite(res, c)) lastWriteAt = Date.now();
-    try { appendForUsage(c.toString('utf8')); } catch {}
+    const chunkStr = c.toString('utf8');
+    try { appendForUsage(chunkStr); } catch {}
+    try { captureReasoningChunk(cap, chunkStr); } catch {}
   });
   upstream.body.on('end', () => {
     stopKeepAlive();
@@ -684,11 +833,15 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       log('USAGE PARSE ERROR', err.message);
     }
+    try {
+      if (isSSE) finalizeReasoningCapture(cap);
+      else captureReasoningFromJSON(usageBuf);
+    } catch {}
     let usageStr = '';
     if (usage) {
       recordUsage(usage);
       const hit = fmtPct(usage.cached, usage.prompt);
-      usageStr = ` prompt=${usage.prompt} cached=${usage.cached} comp=${usage.completion} hit=${hit}`;
+      usageStr = ` prompt=${usage.prompt} cached=${usage.cached} fresh=${usage.fresh} reasoning=${usage.reasoning} comp=${usage.completion} hit=${hit}`;
     }
     log(`${req.method} ${url.pathname} -> ${upstream.statusCode} ${ms}ms${patchInfo}${ka}${usageStr}`);
   });
@@ -740,9 +893,12 @@ server.timeout = 0;                  // no socket inactivity timeout
 
 server.listen(PORT, HOST, () => {
   log(`moonshot-shim listening on http://${HOST}:${PORT} pid=${process.pid}`);
+  log(`force model: ${FORCE_MODEL || '(none)'}`);
   log(`forwarding to ${TARGET}`);
   log(`log file: ${LOG_PATH}`);
-  log('reasoning_content patcher: enabled (assistant.tool_calls -> placeholder " ")');
+  log(REASONING_ECHO
+    ? 'reasoning_content: echo ON (capture + re-inject real thinking; placeholder " " fallback)'
+    : 'reasoning_content patcher: enabled (assistant.tool_calls -> placeholder " ")');
   log(`SSE keepalive: ${KEEPALIVE_INTERVAL_MS}ms  TCP keepalive: ${TCP_KEEPALIVE_MS}ms`);
   log('cache hit accounting: enabled (parses usage from SSE / JSON responses)');
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
