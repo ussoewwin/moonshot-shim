@@ -1,6 +1,6 @@
 # moonshot-shim
 
-A tiny local HTTP proxy that lets any **OpenAI-compatible client** — AutoClaw, Cursor, Cline, etc. — use **Moonshot's Kimi reasoning models** (`kimi-k2.x`, `kimi-k3`) with **tool calling**, while keeping the **context-cache hit rate** as high as possible.
+A tiny local HTTP proxy that lets any **OpenAI-compatible client** — AutoClaw, Cline, etc. — use **Moonshot's Kimi reasoning models** (`kimi-k2.x`, `kimi-k3`) with **tool calling**, while keeping the **context-cache hit rate** as high as possible.
 
 ```
 client  ──►  http://127.0.0.1:8787/v1  ──►  https://api.moonshot.ai/v1
@@ -51,7 +51,6 @@ curl http://127.0.0.1:8787/healthz
 Set your client's **OpenAI base URL** to `http://127.0.0.1:8787/v1`, and keep using your Moonshot API key.
 
 - **AutoClaw** — model provider `baseUrl` → `http://127.0.0.1:8787/v1`
-- **Cursor** — Settings → Models → *Override OpenAI Base URL* → `http://127.0.0.1:8787/v1`
 - **Cline / others** — override the base URL the same way.
 
 No tunnel is required. The shim binds to `127.0.0.1` and is meant for a single machine.

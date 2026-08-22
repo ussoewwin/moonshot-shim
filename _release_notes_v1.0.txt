@@ -1,6 +1,6 @@
 Initial release of moonshot-shim.
 
-A local HTTP proxy that enables Kimi K2.6 in Cursor IDE by injecting reasoning_content placeholders and providing SSE keepalive for long-thinking sessions.
+A local HTTP proxy that enables Kimi K2.6 in OpenAI-compatible clients by injecting reasoning_content placeholders and providing SSE keepalive for long-thinking sessions.
 
 Features:
 - reasoning_content patcher for tool-calling compatibility

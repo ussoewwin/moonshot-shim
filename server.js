@@ -1,7 +1,7 @@
 // moonshot-shim/server.js
 //
-// Local HTTP proxy that sits between an OpenAI-compatible client (Cursor,
-// Cline, etc.) and Moonshot's Kimi API. Its sole purpose is to satisfy
+// Local HTTP proxy that sits between an OpenAI-compatible client and
+// Moonshot's Kimi API. Its sole purpose is to satisfy
 // Moonshot's "thinking model" validation rule:
 //
 //   400: thinking is enabled but reasoning_content is missing
@@ -276,7 +276,7 @@ function extractUsageFromJSON(text) {
 // --- reasoning_content echo -----------------------------------------------
 // Kimi reasoning models emit `reasoning_content` (the thinking trace) on
 // every assistant message. Standard OpenAI-compatible clients (AutoClaw,
-// Cursor, ...) drop it when echoing history back, so the shim injects a
+// etc.) drop it when echoing history back, so the shim injects a
 // placeholder to satisfy Moonshot's validation. To maximise Moonshot's
 // automatic prefix cache (and keep the model's reasoning continuous across
 // turns), we ALSO capture the real `reasoning_content` from upstream
@@ -660,9 +660,9 @@ const server = http.createServer(async (req, res) => {
   const ct = String(upstream.headers['content-type'] || '');
   const isSSE = ct.includes('text/event-stream');
 
-  // Cursor workaround: force model visibility in /v1/models response.
+  // Workaround: force model visibility in /v1/models response.
   // IMPORTANT: Do not gate on upstream Content-Type. Moonshot may return
-  // 401 with non-JSON (or empty) bodies; Cursor still needs a parseable
+  // 401 with non-JSON (or empty) bodies; clients still need a parseable
   // catalog or it shows "Model name is not valid" client-side.
   if (req.method === 'GET' && barePath === '/models' && FORCE_MODEL) {
     try {
