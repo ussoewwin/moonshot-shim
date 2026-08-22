@@ -1,17 +1,6 @@
-# Binaries
-cloudflared.exe
-
 # Runtime logs
 moonshot-shim.log
 moonshot-shim.log.1
-cloudflared-quick.log
-cloudflared-quick.log.err
-
-# Cloudflare Quick Tunnel PID (written by start-cloudflare.ps1)
-cloudflared-quick.pid
-
-# Shared secret (auto-generated at first run)
-_shim_secret.txt
 
 # Dependencies
 node_modules/
@@ -19,7 +8,6 @@ node_modules/
 # Temporary / test artifacts
 sse-payload.json
 sse-smoke.txt
-config.yml
 
 # OS files
 .DS_Store
@@ -31,3 +19,8 @@ Thumbs.db
 !README.md
 !md/CHANGELOG.md
 !md/CHANGELOG.md
+
+# Local cleanup / scratch
+shim-wrapper.log
+server.js.bak-*
+_trash_tunnels_*/
