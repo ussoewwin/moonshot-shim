@@ -43,6 +43,10 @@ const PLACEHOLDER = ' ';
 const REASONING_ECHO = (process.env.SHIM_REASONING_ECHO || '1') !== '0';
 const REASONING_STORE_MAX = Math.max(1, parseInt(process.env.SHIM_REASONING_STORE_MAX || '500', 10));
 const reasonStore = new Map();
+// Byte-stable serialization of the previous request's `messages`, used to
+// detect when the shared history prefix is edited between turns (which
+// invalidates Moonshot's implicit prefix cache).
+let prevMessagesJson = null;
 const UPSTREAM_RETRIES = Math.max(0, parseInt(process.env.SHIM_UPSTREAM_RETRIES || '2', 10));
 const RETRY_BASE_MS = Math.max(50, parseInt(process.env.SHIM_RETRY_BASE_MS || '250', 10));
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
@@ -284,11 +288,66 @@ function extractUsageFromJSON(text) {
 // same assistant message. Set SHIM_REASONING_ECHO=0 to disable.
 
 function stableStringify(v) {
-  if (v === null || v === undefined) return 'null';
-  if (typeof v !== 'object') return JSON.stringify(v);
-  if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
-  const keys = Object.keys(v).sort();
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+  // Deterministic JSON serialization. Object keys are sorted lexicographically
+  // at every depth, array element order is preserved, and undefined values are
+  // dropped (matching JSON.stringify). OpenAI / Kimi / DeepSeek use implicit
+  // prefix caching keyed on exact bytes, so a key-order difference between two
+  // otherwise-identical requests busts the cache. The shim re-serializes the
+  // request body through this to keep the forwarded prefix byte-stable.
+  if (v === null) return 'null';
+  const t = typeof v;
+  if (t === 'string') return JSON.stringify(v);
+  if (t === 'number') return Number.isFinite(v) ? String(v) : 'null';
+  if (t === 'boolean') return v ? 'true' : 'false';
+  if (t === 'undefined') return undefined;
+  if (Array.isArray(v)) {
+    let out = '[';
+    for (let i = 0; i < v.length; i++) {
+      if (i > 0) out += ',';
+      const sub = stableStringify(v[i]);
+      out += sub === undefined ? 'null' : sub;
+    }
+    return out + ']';
+  }
+  if (t === 'object') {
+    let out = '{';
+    let first = true;
+    for (const k of Object.keys(v).sort()) {
+      const sub = stableStringify(v[k]);
+      if (sub === undefined) continue;
+      if (!first) out += ',';
+      first = false;
+      out += JSON.stringify(k) + ':' + sub;
+    }
+    return out + '}';
+  }
+  return undefined; // function / symbol
+}
+
+function detectCacheBreak(messages) {
+  // Moonshot's implicit prefix cache only hits when the shared history prefix
+  // is byte-identical to the previous request. Detect when earlier messages
+  // were edited between turns (changed system prompt, rewritten tool result,
+  // removed/truncated history) and log it, so cache misses are easy to diagnose.
+  if (!Array.isArray(messages)) return;
+  const cur = stableStringify(messages);
+  if (prevMessagesJson !== null && prevMessagesJson !== cur) {
+    // Strip the trailing ']' so the previous array serialization acts as a
+    // proper prefix of a larger array: prev=[a,b] -> "[a,b", then look for
+    // "[a,b," at the start of cur (and symmetrically for truncation).
+    const prevOpen = prevMessagesJson.slice(0, -1);
+    const curOpen = cur.slice(0, -1);
+    const prevIsPrefix = prevMessagesJson !== '[]' && cur.startsWith(prevOpen + ',');
+    const curIsPrefix = cur !== '[]' && prevMessagesJson.startsWith(curOpen + ',');
+    if (prevIsPrefix) {
+      // normal append (new messages added this turn) — prefix cache should hit
+    } else if (curIsPrefix) {
+      log('[cache-break] history truncated (' + messages.length + ' msgs, prev had more) — prefix cache reset');
+    } else {
+      log('[cache-break] shared history edited (' + messages.length + ' msgs) — prefix cache invalidated');
+    }
+  }
+  prevMessagesJson = cur;
 }
 
 function fingerprintMessage(msg) {
@@ -611,13 +670,14 @@ const server = http.createServer(async (req, res) => {
       const n = patchMessagesForMoonshot(json);
       stats.patched += n;
       try {
-        bodyToSend = Buffer.from(JSON.stringify(json), 'utf8');
+        bodyToSend = Buffer.from(stableStringify(json), 'utf8');
       } catch (err) {
         log('JSON STRINGIFY ERROR', err.message);
         bodyToSend = raw; // fall back to original bytes
       }
       patchInfo = ` model=${json.model || '?'} msgs=${json.messages.length} patched=${n} stream=${!!json.stream}`;
       if (DEBUG && n > 0) dlog(`patched ${n} assistant.tool_calls message(s)`);
+      detectCacheBreak(json.messages);
     }
   }
 

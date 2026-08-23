@@ -23,6 +23,8 @@ This shim sits in front of Moonshot and patches the outgoing request so multi-tu
 - **`reasoning_content` injection** — injects a placeholder (`" "`) into any assistant `tool_calls` message whose `reasoning_content` is missing or empty. Moonshot's validation checks for the field's presence; the placeholder value is accepted.
 - **Reasoning echo (cache-first)** — captures the *real* `reasoning_content` from Moonshot's responses and re-injects it verbatim into later turns instead of the placeholder. This keeps Moonshot's automatic prefix cache maximally hit and preserves the model's reasoning continuity across tool calls. Disable with `SHIM_REASONING_ECHO=0`.
 - **Cache accounting** — parses Moonshot's usage block and logs the cache hit rate per request and per minute. Moonshot reports cache reads as a *top-level* `usage.cached_tokens` (not OpenAI's nested `prompt_tokens_details.cached_tokens`); thinking tokens appear under `completion_tokens_details.reasoning_tokens`.
+- **Byte-stable forwarding** — re-serializes the request body with sorted object keys, so the bytes sent to Moonshot are deterministic regardless of the client's key order. Moonshot's implicit prefix cache keys on exact bytes, so any key-order drift would otherwise invalidate it.
+- **Cache-break detection** — detects when the shared message history is edited or truncated between turns and logs a `[cache-break]` warning, making cache misses easy to diagnose.
 - **Resilience** — retries transient upstream errors, keeps SSE streams alive with keepalive comments, and survives crashes.
 
 ## Requirements
