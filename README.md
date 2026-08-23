@@ -57,6 +57,23 @@ Set your client's **OpenAI base URL** to `http://127.0.0.1:8787/v1`, and keep us
 
 No tunnel is required. The shim binds to `127.0.0.1` and is meant for a single machine.
 
+## Multiple providers (parallel)
+
+The shim is target-agnostic — run one instance per provider, each on its own port:
+
+| Provider | Launcher | Port | `SHIM_TARGET` |
+|---|---|---|---|
+| Moonshot (Kimi) | `start-shim.cmd` | `8787` | `https://api.moonshot.ai/v1` |
+| Z.ai (GLM) | `start-shim-zai.cmd` | `8789` | `https://api.z.ai/api/coding/paas/v4` |
+
+Point each client provider at its own port. Everything works the same across providers:
+
+- **`reasoning_content` injection** — GLM requires the field too (the same `400` otherwise), so the patcher applies unchanged.
+- **Cache accounting** — Z.ai reports cache reads as a *nested* `prompt_tokens_details.cached_tokens` (OpenAI-style), while Moonshot uses a *top-level* `cached_tokens`. The shim reads both.
+- **Byte-stable forwarding / cache-break detection** — provider-agnostic.
+
+To add another provider, copy `start-shim-zai.ps1` and change `SHIM_TARGET` + `SHIM_PORT`.
+
 ## Configuration
 
 All settings are environment variables:

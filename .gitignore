@@ -21,6 +21,6 @@ Thumbs.db
 !md/CHANGELOG.md
 
 # Local cleanup / scratch
-shim-wrapper.log
+shim-wrapper*.log
 server.js.bak-*
 _trash_tunnels_*/
