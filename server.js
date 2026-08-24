@@ -682,6 +682,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   const upstreamHeaders = copyHeaders(req.headers);
+  // Force identity (uncompressed) responses from upstream. Some providers
+  // (Z.ai/GLM) gzip the body when the client advertises accept-encoding;
+  // the client can decompress, but our usage/cache accounting would try to
+  // JSON.parse the gzip bytes and silently drop the usage block (hit=0).
+  delete upstreamHeaders['accept-encoding'];
   if (bodyToSend) upstreamHeaders['content-length'] = String(bodyToSend.length);
 
   let upstream;
