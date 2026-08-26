@@ -41,7 +41,7 @@ const TARGET = (process.env.SHIM_TARGET || 'https://api.moonshot.ai/v1').replace
 const DEBUG = process.env.SHIM_DEBUG === '1';
 const PLACEHOLDER = ' ';
 const REASONING_ECHO = (process.env.SHIM_REASONING_ECHO || '1') !== '0';
-const REASONING_STORE_MAX = Math.max(1, parseInt(process.env.SHIM_REASONING_STORE_MAX || '500', 10));
+const REASONING_STORE_MAX = Math.max(1, parseInt(process.env.SHIM_REASONING_STORE_MAX || '5000', 10)); // large default: keep long-session reasoning echoes so the injected prefix stays byte-stable (eviction silently breaks Moonshot's prefix cache)
 const reasonStore = new Map();
 // Byte-stable serialization of the previous request's `messages`, used to
 // detect when the shared history prefix is edited between turns (which
@@ -49,6 +49,16 @@ const reasonStore = new Map();
 let prevMessagesJson = null;
 const UPSTREAM_RETRIES = Math.max(0, parseInt(process.env.SHIM_UPSTREAM_RETRIES || '2', 10));
 const RETRY_BASE_MS = Math.max(50, parseInt(process.env.SHIM_RETRY_BASE_MS || '250', 10));
+// --- rate-limit (429/503) absorption ---------------------------------------
+// Moonshot returns 429 ("The engine is currently overloaded, please try again
+// later") when the account's TPM window is exceeded. The shim absorbs these
+// with exponential backoff so the client (and OpenClaw's auth-profile
+// cooldown) never sees the failure. Retries re-send the byte-identical body,
+// so Moonshot's implicit prefix cache still hits.
+const RETRY_429_ENABLED = (process.env.SHIM_RETRY_429 || '1') !== '0';
+const RETRY_429_BASE_MS = Math.max(1000, parseInt(process.env.SHIM_RETRY429_BASE_MS || '30000', 10));
+const RETRY_429_MAX_MS = Math.max(RETRY_429_BASE_MS, parseInt(process.env.SHIM_RETRY429_MAX_MS || '240000', 10));
+const RETRY_429_ATTEMPTS = Math.max(1, parseInt(process.env.SHIM_RETRY429_ATTEMPTS || '4', 10));
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
 const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || '').trim();
@@ -689,7 +699,10 @@ const server = http.createServer(async (req, res) => {
   delete upstreamHeaders['accept-encoding'];
   if (bodyToSend) upstreamHeaders['content-length'] = String(bodyToSend.length);
 
-  let upstream;
+  let upstream = null;
+  let upstreamAttempt = 0;
+  let lastUpstreamStatus = 0;
+  while (true) {
   try {
     upstream = await requestWithRetry(
       upstreamUrl,
@@ -719,7 +732,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  bumpStatus(upstream.statusCode);
+  lastUpstreamStatus = upstream.statusCode;
+  const retryable429 =
+    RETRY_429_ENABLED &&
+    (lastUpstreamStatus === 429 || lastUpstreamStatus === 503) &&
+    upstreamAttempt < RETRY_429_ATTEMPTS;
+  if (!retryable429) break;
+  try { upstream.body.destroy(); } catch {}
+  upstreamAttempt++;
+  const retryWaitMs = Math.min(RETRY_429_MAX_MS, RETRY_429_BASE_MS * Math.pow(2, upstreamAttempt - 1));
+  log('UPSTREAM RATE-LIMIT RETRY', 'status=' + lastUpstreamStatus, 'attempt=' + upstreamAttempt + '/' + RETRY_429_ATTEMPTS, req.method + ' ' + upstreamUrl, 'wait=' + retryWaitMs + 'ms');
+  bumpStatus(lastUpstreamStatus);
+  await sleep(retryWaitMs);
+  }
+
+  bumpStatus(lastUpstreamStatus);
 
   const respHeaders = copyHeaders(upstream.headers);
   const ct = String(upstream.headers['content-type'] || '');
@@ -968,6 +995,7 @@ server.listen(PORT, HOST, () => {
   log('cache hit accounting: enabled (parses usage from SSE / JSON responses)');
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
   log('point your client "Override OpenAI Base URL" at http://' + HOST + ':' + PORT + '/v1');
+  log(RETRY_429_ENABLED ? 'rate-limit retry: ON (429/503 backoff base=' + RETRY_429_BASE_MS + 'ms attempts=' + RETRY_429_ATTEMPTS + ' max=' + RETRY_429_MAX_MS + 'ms)' : 'rate-limit retry: OFF');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
 });
 
