@@ -59,6 +59,19 @@ const RETRY_429_ENABLED = (process.env.SHIM_RETRY_429 || '1') !== '0';
 const RETRY_429_BASE_MS = Math.max(1000, parseInt(process.env.SHIM_RETRY429_BASE_MS || '30000', 10));
 const RETRY_429_MAX_MS = Math.max(RETRY_429_BASE_MS, parseInt(process.env.SHIM_RETRY429_MAX_MS || '240000', 10));
 const RETRY_429_ATTEMPTS = Math.max(1, parseInt(process.env.SHIM_RETRY429_ATTEMPTS || '4', 10));
+// --- GLM thinking-mode injection --------------------------------------------
+// Z.ai GLM reasoning models only emit reasoning_content when the request body
+// carries {"thinking": {"type": "enabled"}} (GLM-5.3-Flash defaults to disabled).
+// AUTO mode: inject "enabled" only when TARGET looks like a Z.ai endpoint, so
+// Moonshot-forwarding instances are unaffected. SHIM_FORCE_THINKING=enabled /
+// disabled forces it for every target; "off" disables injection entirely.
+const FORCE_THINKING_RAW = (process.env.SHIM_FORCE_THINKING || '').trim().toLowerCase();
+const FORCE_THINKING_MODE =
+  FORCE_THINKING_RAW === 'enabled' || FORCE_THINKING_RAW === 'disabled'
+    ? FORCE_THINKING_RAW
+    : FORCE_THINKING_RAW === 'off'
+      ? ''
+      : (/z\.ai|bigmodel/i.test(TARGET) ? 'enabled' : '');
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
 const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || '').trim();
@@ -676,6 +689,9 @@ const server = http.createServer(async (req, res) => {
     if (json && typeof json === 'object' && FORCE_MODEL) {
       json.model = FORCE_MODEL;
     }
+    if (json && typeof json === 'object' && FORCE_THINKING_MODE && !json.thinking) {
+      json.thinking = { type: FORCE_THINKING_MODE };
+    }
     if (json && Array.isArray(json.messages)) {
       const n = patchMessagesForMoonshot(json);
       stats.patched += n;
@@ -996,6 +1012,7 @@ server.listen(PORT, HOST, () => {
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
   log('point your client "Override OpenAI Base URL" at http://' + HOST + ':' + PORT + '/v1');
   log(RETRY_429_ENABLED ? 'rate-limit retry: ON (429/503 backoff base=' + RETRY_429_BASE_MS + 'ms attempts=' + RETRY_429_ATTEMPTS + ' max=' + RETRY_429_MAX_MS + 'ms)' : 'rate-limit retry: OFF');
+  log(FORCE_THINKING_MODE ? 'thinking injection: ON (thinking={"type":"' + FORCE_THINKING_MODE + '"} on bodies missing it)' : 'thinking injection: OFF (SHIM_FORCE_THINKING=enabled/disabled/off to override)');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
 });
 
