@@ -1,8 +1,9 @@
 ' start-shim-hidden.vbs
-' 窓を出さずに両方の shim を起動する。
-'   - start-shim.cmd     (AutoClaw <-> Moonshot リレー, port 8787)
-'   - start-shim-zai.cmd (AutoClaw <-> Z.ai GLM リレー, port 8789)
-' 使い方: この .vbs をダブルクリック、または shell:startup にショートカットを置く。
+' ????????? shim ?????reasoning ???????
+'   - start-shim.cmd      (AutoClaw <-> Moonshot ???, port 8787)
+'   - start-shim-zai.cmd  (AutoClaw <-> Z.ai GLM ???, port 8789)
+'   - set-reasoning.cmd   (?????????? reasoning ? true ???)
+' ???: ?? .vbs ???????????? shell:startup ????????????
 
 Set WshShell = CreateObject("WScript.Shell")
 Dim fso, baseDir
@@ -10,5 +11,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai.cmd") & Chr(34), 0, False
+WScript.Sleep 5000
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "set-reasoning.cmd") & Chr(34), 0, True
 Set WshShell = Nothing
 Set fso = Nothing

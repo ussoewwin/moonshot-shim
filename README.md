@@ -27,6 +27,8 @@ This shim sits in front of the provider and patches the outgoing request so mult
 - **Byte-stable forwarding** — re-serializes the request body with sorted object keys so the forwarded bytes are deterministic regardless of the client's key order (the prefix cache keys on exact bytes).
 - **Cache-break detection** — detects when the shared history is edited or truncated between turns and logs a `[cache-break]` warning, making cache misses easy to diagnose.
 - **Resilience** — retries transient upstream errors, keeps SSE streams alive with keepalive comments, and survives crashes.
+- **Rate-limit (429/503) absorption** — when the upstream returns `429` (TPM window exceeded / engine overloaded) or `503`, the shim retries the **byte-identical** body with exponential backoff (default 30s / 60s / 120s / 240s, up to 4 attempts) so the client never sees the failure. Retrying the same bytes keeps the provider's prefix cache intact, and OpenClaw-style clients avoid tripping their auth-profile cooldown. Logged as `UPSTREAM RATE-LIMIT RETRY`.
+- **GLM thinking injection** — Z.ai GLM reasoning models only emit `reasoning_content` when the request body carries `{"thinking": {"type": "enabled"}}` (GLM-5.3-Flash defaults to disabled). Instances forwarding to a Z.ai/bigmodel endpoint inject this automatically into bodies that lack it, so thinking works without client-side changes. Controlled by `SHIM_FORCE_THINKING`.
 
 ## Requirements
 
@@ -44,7 +46,13 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 
 - `start-shim.cmd` — Moonshot relay on port `8787` (`start-shim.ps1`).
 - `start-shim-zai.cmd` — Z.ai (GLM) relay on port `8789` (`start-shim-zai.ps1`).
-- `start-shim-hidden.vbs` — place in `shell:startup` for logon auto-start.
+- `start-shim-hidden.vbs` — starts both relays hidden, then runs `set-reasoning.cmd` after 5s; place in `shell:startup` for logon auto-start.
+- `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
+
+```bash
+node set-reasoning.mjs --dry-run   # preview changes
+node set-reasoning.mjs             # apply
+```
 
 Check it's up:
 
@@ -90,6 +98,11 @@ All settings are environment variables:
 | `SHIM_RETRY_BASE_MS` | `250` | Retry backoff base (ms) |
 | `SHIM_KEEPALIVE_MS` | `10000` | SSE keepalive comment interval (ms) |
 | `SHIM_TCP_KEEPALIVE_MS` | `15000` | OS-level TCP keepalive (ms) |
+| `SHIM_RETRY_429` | `1` | `1` = absorb upstream `429`/`503` with backoff; `0` = pass through |
+| `SHIM_RETRY429_BASE_MS` | `30000` | First 429-retry backoff (ms); doubles each attempt |
+| `SHIM_RETRY429_MAX_MS` | `240000` | Cap for 429-retry backoff (ms) |
+| `SHIM_RETRY429_ATTEMPTS` | `4` | Max 429/503 retries per request |
+| `SHIM_FORCE_THINKING` | *(auto)* | `enabled`/`disabled` = force `thinking:{type}` on every body; empty = auto (inject `enabled` only when `SHIM_TARGET` matches `z.ai`/`bigmodel`); `off` = never inject |
 | `SHIM_LOG` | `./moonshot-shim.log` | Log file path |
 | `SHIM_DEBUG` | *(unset)* | `1` = verbose patching logs |
 
