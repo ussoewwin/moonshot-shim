@@ -16,5 +16,6 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai.cmd") & Chr(34), 0, False
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-deepseek.cmd") & Chr(34), 0, False
 Set WshShell = Nothing
 Set fso = Nothing
