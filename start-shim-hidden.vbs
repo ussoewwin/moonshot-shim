@@ -4,7 +4,6 @@
 '   - start-shim-deepseek.cmd    (AutoClaw <-> DeepSeek relay, port 8791)
 '   - start-shim-opencode.cmd    (AutoClaw <-> OpenCode Go DeepSeek relay, port 8792)
 '   - start-shim-go-fast.cmd     (AutoClaw <-> OpenCode Go go-fast relay, port 8795, thinking OFF)
-'   - start-shim-go-fast-glm.cmd (AutoClaw <-> OpenCode Go go-fast GLM relay, port 8796, thinking OFF)
 '   - start-shim-opencode-glm.cmd (AutoClaw <-> OpenCode Go GLM relay, port 8793)
 '   - start-img-mcp.cmd          (img-recognition MCP server, port 19690)
 '
@@ -23,7 +22,6 @@ WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai.cmd") & Chr(34), 0
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-deepseek.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-go-fast.cmd") & Chr(34), 0, False
-WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-go-fast-glm.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-glm.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-kimi.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-img-mcp.cmd") & Chr(34), 0, False

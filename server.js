@@ -688,8 +688,8 @@ const server = http.createServer(async (req, res) => {
       json.model = FORCE_MODEL;
     }
     if (json && typeof json === 'object' && FORCE_THINKING_MODE === 'off') {
-      // explicit suppression: some relays (OpenCode Go GLM) think by default even
-      // without a thinking field, so "don't inject" is not enough — force disabled.
+      // thinking.type:"disabled" — GLM-5.3+ ignores it (Z.ai migration guide) but
+      // DeepSeek honours it (proven reasoning=0 on go-fast 8795). go-fast GLM is retired.
       json.thinking = { type: 'disabled' };
     } else if (json && typeof json === 'object' && FORCE_THINKING_MODE && !json.thinking) {
       json.thinking = { type: FORCE_THINKING_MODE };
@@ -1014,7 +1014,7 @@ server.listen(PORT, HOST, () => {
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
   log('point your client "Override OpenAI Base URL" at http://' + HOST + ':' + PORT + '/v1');
   log(RETRY_429_ENABLED ? 'rate-limit retry: ON (429/503 backoff base=' + RETRY_429_BASE_MS + 'ms attempts=' + RETRY_429_ATTEMPTS + ' max=' + RETRY_429_MAX_MS + 'ms)' : 'rate-limit retry: OFF');
-  if (FORCE_THINKING_MODE === 'off') log('thinking injection: SUPPRESS (rewrites thinking={"type":"disabled"} on every body — upstream default thinking killed)');
+  if (FORCE_THINKING_MODE === 'off') log('thinking injection: SUPPRESS (rewrites thinking={"type":"disabled"} on every body)');
   else if (FORCE_THINKING_MODE) log('thinking injection: ON (thinking={"type":"' + FORCE_THINKING_MODE + '"} on bodies missing it)');
   else log('thinking injection: AUTO (inject enabled only for z.ai/bigmodel targets)');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
