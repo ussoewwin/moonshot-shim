@@ -4,6 +4,7 @@
 '   - start-shim-deepseek.cmd    (AutoClaw <-> DeepSeek relay, port 8791)
 '   - start-shim-opencode.cmd    (AutoClaw <-> OpenCode Go DeepSeek relay, port 8792)
 '   - start-shim-opencode-glm.cmd (AutoClaw <-> OpenCode Go GLM relay, port 8793)
+'   - start-img-mcp.cmd          (img-recognition MCP server, port 19690)
 '
 ' NOTE: set-reasoning is intentionally NOT auto-run here: it rewrites
 ' AutoClaw config files and must only run while AutoClaw is closed.
@@ -21,5 +22,6 @@ WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-deepseek.cmd") & Chr(3
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-glm.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-kimi.cmd") & Chr(34), 0, False
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-img-mcp.cmd") & Chr(34), 0, False
 Set WshShell = Nothing
 Set fso = Nothing
