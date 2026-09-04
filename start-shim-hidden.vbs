@@ -1,6 +1,5 @@
 ' start-shim-hidden.vbs
 ' Launches all shim relays hidden at logon (no console windows).
-'   - start-shim.cmd             (AutoClaw <-> Moonshot relay, port 8787)
 '   - start-shim-zai.cmd         (AutoClaw <-> Z.ai GLM relay, port 8789)
 '   - start-shim-deepseek.cmd    (AutoClaw <-> DeepSeek relay, port 8791)
 '   - start-shim-opencode.cmd    (AutoClaw <-> OpenCode Go DeepSeek relay, port 8792)
@@ -17,10 +16,10 @@ Set WshShell = CreateObject("WScript.Shell")
 Dim fso, baseDir
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
-WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-deepseek.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-glm.cmd") & Chr(34), 0, False
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-kimi.cmd") & Chr(34), 0, False
 Set WshShell = Nothing
 Set fso = Nothing

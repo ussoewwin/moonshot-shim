@@ -3,7 +3,6 @@
 A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cline, etc.) use **reasoning models** — Moonshot's **Kimi** (`kimi-k2.x`, `kimi-k3`) and Z.ai's **GLM** (`glm-5.3`, `glm-5-turbo`) — with **tool calling**, while keeping the **context-cache hit rate** as high as possible.
 
 ```
-client ──▶ http://127.0.0.1:8787/v1 ──▶ https://api.moonshot.ai/v1            (Kimi)
 client ──▶ http://127.0.0.1:8789/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM, thinking auto-on)
 client ──▶ http://127.0.0.1:8791/v1 ──▶ https://api.deepseek.com/v1           (DeepSeek direct)
 client ──▶ http://127.0.0.1:8792/v1 ──▶ https://opencode.ai/zen/go/v1         (DeepSeek via OpenCode Go)
@@ -42,12 +41,10 @@ This shim sits in front of the provider and patches the outgoing request so mult
 
 ```bash
 npm install        # installs undici
-npm start          # node server.js → listens on 127.0.0.1:8787 (Moonshot)
 ```
 
 On Windows, use the bundled launchers (each auto-restarts the process if it crashes):
 
-- `start-shim.cmd` — Moonshot relay on port `8787` (`start-shim.ps1`).
 - `start-shim-zai.cmd` — Z.ai (GLM) relay on port `8789` (`start-shim-zai.ps1`).
 - `start-shim-hidden.vbs` — starts both relays hidden, then runs `set-reasoning.cmd` after 5s; place in `shell:startup` for logon auto-start.
 - `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
@@ -60,7 +57,6 @@ node set-reasoning.mjs             # apply
 Check it's up:
 
 ```bash
-curl http://127.0.0.1:8787/healthz
 # {"status":"ok"}
 ```
 
@@ -70,7 +66,6 @@ The shim is target-agnostic — run one instance per provider, each on its own p
 
 | Provider | Launcher | Port | `SHIM_TARGET` |
 |---|---|---|---|
-| Moonshot (Kimi) | `start-shim.cmd` | `8787` | `https://api.moonshot.ai/v1` |
 | Z.ai (GLM) | `start-shim-zai.cmd` | `8789` | `https://api.z.ai/api/coding/paas/v4` |
 
 Both providers require `reasoning_content` on assistant messages, so the patcher applies unchanged. The only provider-specific difference is the cache-field layout, which the shim reads either way. To add another provider, copy `start-shim-zai.ps1` and change `SHIM_TARGET` + `SHIM_PORT`.
@@ -79,7 +74,6 @@ Both providers require `reasoning_content` on assistant messages, so the patcher
 
 Set your client's **OpenAI base URL** to the shim's `/v1` endpoint and keep using the provider's own API key.
 
-- Moonshot → `http://127.0.0.1:8787/v1`
 - Z.ai (GLM) → `http://127.0.0.1:8789/v1`
 
 No tunnel is required. The shim binds to `127.0.0.1` and is meant for a single machine.
@@ -90,7 +84,6 @@ All settings are environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `SHIM_PORT` | `8787` | Listen port |
 | `SHIM_HOST` | `127.0.0.1` | Listen address |
 | `SHIM_TARGET` | `https://api.moonshot.ai/v1` | Upstream API base URL |
 | `SHIM_FORCE_MODEL` | *(empty)* | If set, overrides the requested model id (empty = pass through) |
