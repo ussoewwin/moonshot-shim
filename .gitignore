@@ -17,6 +17,7 @@ Thumbs.db
 *.md
 !*.en.md
 !README.md
+!MCP.md
 !md/CHANGELOG.md
 !md/CHANGELOG.md
 
