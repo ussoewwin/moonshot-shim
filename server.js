@@ -694,6 +694,9 @@ const server = http.createServer(async (req, res) => {
     } else if (json && typeof json === 'object' && FORCE_THINKING_MODE && !json.thinking) {
       json.thinking = { type: FORCE_THINKING_MODE };
     }
+    if (json && typeof json === 'object' && SHIM_REASONING_EFFORT) {
+      json.reasoning_effort = SHIM_REASONING_EFFORT;
+    }
     if (json && Array.isArray(json.messages)) {
       const n = patchMessagesForMoonshot(json);
       stats.patched += n;
