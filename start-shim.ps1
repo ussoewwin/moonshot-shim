@@ -17,6 +17,7 @@
 # itself, regardless of this wrapper.
 
 $ErrorActionPreference = 'Stop'
+$env:SHIM_FORCE_THINKING = 'enabled'  # inject {"thinking":{"type":"enabled"}} on every body lacking it (user request: thinking ON everywhere)
 Set-Location -Path $PSScriptRoot
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper.log'

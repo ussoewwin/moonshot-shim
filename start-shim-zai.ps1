@@ -13,6 +13,7 @@ Set-Location -Path $PSScriptRoot
 # --- Z.ai target (override defaults) ---
 $env:SHIM_PORT = '8789'
 $env:SHIM_TARGET = 'https://api.z.ai/api/coding/paas/v4'
+$env:SHIM_FORCE_THINKING = 'enabled'  # inject {"thinking":{"type":"enabled"}} on every body lacking it
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-zai.log'
 

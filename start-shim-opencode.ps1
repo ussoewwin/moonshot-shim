@@ -18,6 +18,7 @@ Set-Location -Path $PSScriptRoot
 # --- OpenCode Go target (override defaults) ---
 $env:SHIM_PORT = '8792'
 $env:SHIM_TARGET = 'https://opencode.ai/zen/go/v1'
+$env:SHIM_FORCE_THINKING = 'enabled'  # inject {"thinking":{"type":"enabled"}} on every body lacking it
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-opencode.log'
 

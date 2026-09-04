@@ -19,6 +19,7 @@ Set-Location -Path $PSScriptRoot
 # --- DeepSeek target (override defaults) ---
 $env:SHIM_PORT = '8791'
 $env:SHIM_TARGET = 'https://api.deepseek.com/v1'
+$env:SHIM_FORCE_THINKING = 'enabled'  # inject {"thinking":{"type":"enabled"}} on every body lacking it
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-deepseek.log'
 
