@@ -73,6 +73,9 @@ const FORCE_THINKING_MODE =
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
 const TCP_KEEPALIVE_MS = Math.max(0, parseInt(process.env.SHIM_TCP_KEEPALIVE_MS || '15000', 10));
 const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || '').trim();
+// Z.ai GLM-5.3/FLASH: official minimal-thought mode (reasoning_effort="low" = mild inference).
+// Empty when unset -> injection skipped entirely (other instances unaffected).
+const SHIM_REASONING_EFFORT = (process.env.SHIM_REASONING_EFFORT || '').trim();
 
 // --- Shared Secret (Phase 1) --------------------------------------------
 const SHIM_SECRET = process.env.SHIM_SECRET || '';
