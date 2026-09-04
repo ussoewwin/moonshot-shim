@@ -1,37 +1,37 @@
-# img-mcp — 画像認識 MCP サーバー
+# img-mcp — image recognition MCP server
 
-AutoGLM 画像認識（スキル: `autoglm-image-recognition`）を **MCP ツール化**したローカルサーバー。Windows コンソールの cp932 エンコーディング問題を構造的に回避している（スクリプト側 UTF-8 強制 + Node ラッパー）。
+MCP wrapper around the AutoGLM image-recognition skill (`autoglm-image-recognition`). Structurally immune to the Windows cp932 console-encoding crash (UTF-8-forced skill scripts + Node wrapper).
 
 ```
 AutoClaw (MCP client)
    └─▶ http://127.0.0.1:19690/mcp   (Streamable HTTP, JSON-RPC 2.0)
           └─▶ node img-mcp-server.mjs
-                 ├─ upload_image     → autoglm-file-upload/upload-mix.py   → OSS 公開 URL
+                 ├─ upload_image     → autoglm-file-upload/upload-mix.py   → public OSS URL
                  └─ recognize_image  → autoglm-image-recognition/image-recognition.py
-                                          (local_path 指定時は自動アップロードしてから認識)
+                                          (local_path is auto-uploaded before recognition)
 ```
 
-## ツール
+## Tools
 
-| ツール | 入力 | 出力 |
+| Tool | Input | Output |
 |---|---|---|
-| `upload_image` | `path`（ローカル絶対パス） | `{ url }` — AutoGLM OSS の公開 URL |
-| `recognize_image` | `image_url` または `local_path`、`prompt`（任意） | 認識結果テキスト（`data.text`） |
+| `upload_image` | `path` (absolute local path) | `{ url }` — public AutoGLM OSS URL |
+| `recognize_image` | `image_url` or `local_path`, optional `prompt` | recognition text (`data.text`) |
 
-- `recognize_image` に `local_path` を渡すと **自動で upload → 認識**まで一気に実行する
-- `prompt` 例: 「スクリーンショットの全テキストを列挙」「モデルIDとBaseURLを1行で」
+- Passing `local_path` to `recognize_image` runs **upload → recognition in one call**.
+- Example `prompt`: "List all text in the screenshot", "Give model ID and base URL on one line".
 
-## 起動・自動起動
+## Startup / autostart
 
-- ランチャー: `start-img-mcp.cmd`（`start-img-mcp.ps1` が自動再起動ループ付きで node を管理）
-- ログオン自動起動: `start-shim-hidden.vbs` に配線済み（shell:startup にショートカットがあればログオン時に起動）
-- ポート: **19690**（`IMG_MCP_PORT` で変更可）
-- ヘルスチェック: `GET http://127.0.0.1:19690/healthz` → `{"status":"ok","tools":["upload_image","recognize_image"]}`
-- ログ: `img-mcp-wrapper.log`（wrapper）/ server 自体は stdout にログ
+- Launcher: `start-img-mcp.cmd` (`start-img-mcp.ps1` runs node under an auto-restart loop)
+- Logon autostart: wired into `start-shim-hidden.vbs` (with the shell:startup shortcut it starts at logon)
+- Port: **19690** (override with `IMG_MCP_PORT`)
+- Health check: `GET http://127.0.0.1:19690/healthz` → `{"status":"ok","tools":["upload_image","recognize_image"]}`
+- Logs: `img-mcp-wrapper.log` (wrapper) / the server itself logs to stdout
 
-## AutoClaw への登録
+## AutoClaw registration
 
-`openclaw.json` / `openclaw.runtime.json` の `mcp.servers` に登録済み:
+Registered in `openclaw.json` / `openclaw.runtime.json` under `mcp.servers`:
 
 ```json
 "autoglm-img": {
@@ -41,15 +41,15 @@ AutoClaw (MCP client)
 }
 ```
 
-AutoClaw 再起動後、エージェントから `recognize_image` / `upload_image` ツールが使えるようになる。
+After restarting AutoClaw, agents can call the `recognize_image` / `upload_image` tools.
 
-## 実装メモ（今後の追記ルール）
+## Implementation notes (append future tools here)
 
-- 本サーバーは既存スキルの Python スクリプト（UTF-8 強制済み）を呼ぶだけ。**新しい画像系ツールはこのセクションに追記していく**
-- スクリプト側の cp932 ガード（`sys.stdout.reconfigure(encoding="utf-8")`）は 2026-09-04 に `image-recognition.py` / 3 つの `upload-mix.py` に埋め込み済み。新規スクリプト追加時も同じガードを冒頭に入れること
-- `usage.prompt_tokens_details` が空のリレー（OpenCode Go）経由でも認識機能には影響なし
-- 通信はローカルバインドのみ（`127.0.0.1`）。認証は未実装（同一マシン内想定）。外部公開する場合は `SHIM_SECRET` 相当の認証を先に追加すること
+- The server just shells out to the existing skill Python scripts (UTF-8 hardened). **Append new image-related tools to this section.**
+- The cp932 guard (`sys.stdout.reconfigure(encoding="utf-8")`) was embedded into `image-recognition.py` and the three `upload-mix.py` scripts on 2026-09-04. Any new script must include the same guard at the top.
+- Empty `usage.prompt_tokens_details` from some relays (OpenCode Go) does not affect recognition.
+- Localhost binding only (`127.0.0.1`); no auth implemented (single-machine assumption). Add `SHIM_SECRET`-style auth before ever exposing it externally.
 
-## 変更履歴
+## Change log
 
-- 2026-09-04: 初版作成。upload_image / recognize_image の 2 ツール。AutoClaw に `autoglm-img` として登録。
+- 2026-09-04: initial version. `upload_image` / `recognize_image` tools. Registered in AutoClaw as `autoglm-img`.

@@ -11,7 +11,7 @@ client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v
                 (one shim instance per provider line; env vars decide port + target)
 ```
 
-**画像認識 MCP サーバー（img-mcp）については [MCP.md](./MCP.md) を参照。**
+**The image-recognition MCP server (img-mcp) is documented in [MCP.md](./MCP.md).**
 
 ## Why it exists
 
@@ -54,7 +54,7 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-glm.cmd` — OpenCode Go (GLM-5.3-Flash) relay on port `8793` (`start-shim-opencode-glm.ps1`).
 - `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi K3) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
 - `start-shim-hidden.vbs` — starts **all five relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
-- `start-img-mcp.cmd` — img-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
+- `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
 - `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
 
 ```bash
@@ -171,4 +171,4 @@ Boots a mock echo server, starts a fresh shim against it, sends a multi-turn too
 
 ## Related
 
-- **[MCP.md](./MCP.md)** — img-mcp: 画像認識 MCP サーバー（upload_image / recognize_image）。今後の MCP ツール追記は MCP.md に行う。
+- **[MCP.md](./MCP.md)** — img-mcp: image-recognition MCP server (upload_image / recognize_image). Append future MCP tools to MCP.md.
