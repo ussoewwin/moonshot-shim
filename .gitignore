@@ -24,3 +24,13 @@ Thumbs.db
 shim-wrapper*.log
 server.js.bak-*
 _trash_tunnels_*/
+
+# wrapper runtime logs
+img-mcp-wrapper.log
+shim-wrapper-deepseek.log
+shim-wrapper-opencode-glm.log
+shim-wrapper-opencode.log
+shim-wrapper-opencode-kimi.log
+
+# local backups
+*.bak-*
