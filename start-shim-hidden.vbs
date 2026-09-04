@@ -1,7 +1,10 @@
 ' start-shim-hidden.vbs
-' Launches both shim relays hidden at logon (no console windows).
-'   - start-shim.cmd      (AutoClaw <-> Moonshot relay, port 8787)
-'   - start-shim-zai.cmd  (AutoClaw <-> Z.ai GLM relay, port 8789)
+' Launches all shim relays hidden at logon (no console windows).
+'   - start-shim.cmd             (AutoClaw <-> Moonshot relay, port 8787)
+'   - start-shim-zai.cmd         (AutoClaw <-> Z.ai GLM relay, port 8789)
+'   - start-shim-deepseek.cmd    (AutoClaw <-> DeepSeek relay, port 8791)
+'   - start-shim-opencode.cmd    (AutoClaw <-> OpenCode Go DeepSeek relay, port 8792)
+'   - start-shim-opencode-glm.cmd (AutoClaw <-> OpenCode Go GLM relay, port 8793)
 '
 ' NOTE: set-reasoning is intentionally NOT auto-run here: it rewrites
 ' AutoClaw config files and must only run while AutoClaw is closed.

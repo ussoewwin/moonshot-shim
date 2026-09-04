@@ -4,8 +4,11 @@ A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cl
 
 ```
 client ──▶ http://127.0.0.1:8787/v1 ──▶ https://api.moonshot.ai/v1            (Kimi)
-client ──▶ http://127.0.0.1:8789/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM)
-                (one shim instance per provider)
+client ──▶ http://127.0.0.1:8789/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM, thinking auto-on)
+client ──▶ http://127.0.0.1:8791/v1 ──▶ https://api.deepseek.com/v1           (DeepSeek direct)
+client ──▶ http://127.0.0.1:8792/v1 ──▶ https://opencode.ai/zen/go/v1         (DeepSeek via OpenCode Go)
+client ──▶ http://127.0.0.1:8793/v1 ──▶ https://opencode.ai/zen/go/v1         (GLM-5.3-Flash via OpenCode Go, thinking forced)
+                (one shim instance per provider line; env vars decide port + target)
 ```
 
 ## Why it exists
