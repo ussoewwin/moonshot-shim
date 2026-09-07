@@ -524,6 +524,7 @@ const HOP_BY_HOP = new Set([
   'upgrade',
   'host',
   'content-length',
+  'expect', // Z.ai rejects Expect: 100-continue with 502 (expect header not supported)
 ]);
 
 function copyHeaders(src) {
