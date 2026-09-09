@@ -32,6 +32,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { request } from 'undici';
 
@@ -103,6 +104,33 @@ const SECURITY_HEADERS = {
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// --- OpenCode Go session header (x-opencode-session) ----------------------
+// OpenCode Go (opencode.ai/zen/go) requires EVERY request to carry a stable
+// `x-opencode-session` header (vendor change effective 2026-09-06).
+// Missing header -> 400 { "type": "MissingSessionID" }.
+//
+// Scope: applied ONLY when SHIM_TARGET points at OpenCode Go (explicit gate
+// below). Z.ai / DeepSeek / Moonshot instances are untouched.
+//
+// ID strategy: derived deterministically from the conversation's first
+// message (+ model id), so it is stable across turns of the same
+// conversation (the vendor uses it for prompt-cache routing) and differs
+// between conversations. If the client already sends the header, it is
+// forwarded untouched (client wins, no double-inject).
+const OPENCODE_GO = TARGET.includes('opencode.ai/zen/go');
+const OPENCODE_SESSION_PREFIX = process.env.SHIM_OPENCODE_SESSION_PREFIX || 'shimgo-';
+
+function opencodeSessionId(json) {
+  try {
+    const first = json && Array.isArray(json.messages) ? json.messages[0] : null;
+    const content = first ? (typeof first.content === 'string' ? first.content : JSON.stringify(first.content ?? '')) : '';
+    const seed = JSON.stringify({ model: json?.model ?? '', role: first?.role ?? '', content });
+    return OPENCODE_SESSION_PREFIX + crypto.createHash('sha256').update(seed).digest('hex').slice(0, 24);
+  } catch {
+    return OPENCODE_SESSION_PREFIX + 'fallback';
+  }
+}
 const LOG_PATH = process.env.SHIM_LOG || path.join(__dirname, 'moonshot-shim.log');
 const LOG_MAX_BYTES = 5 * 1024 * 1024; // 5 MB then rotate to .1
 
@@ -723,6 +751,18 @@ const server = http.createServer(async (req, res) => {
   // JSON.parse the gzip bytes and silently drop the usage block (hit=0).
   delete upstreamHeaders['accept-encoding'];
   if (bodyToSend) upstreamHeaders['content-length'] = String(bodyToSend.length);
+
+  // OpenCode Go only: inject x-opencode-session when the client did not send
+  // one. Explicit target-gated branch — no effect on other providers.
+  if (OPENCODE_GO && !upstreamHeaders['x-opencode-session']) {
+    let sid = OPENCODE_SESSION_PREFIX + 'static';
+    try {
+      const sj = bodyToSend ? JSON.parse(bodyToSend.toString('utf8')) : null;
+      sid = opencodeSessionId(sj);
+    } catch {}
+    upstreamHeaders['x-opencode-session'] = sid;
+    if (DEBUG) dlog(`x-opencode-session injected: ${sid}`);
+  }
 
   let upstream = null;
   let upstreamAttempt = 0;
