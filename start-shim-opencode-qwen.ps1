@@ -5,13 +5,14 @@
 #
 #   AutoClaw -> http://127.0.0.1:8795/v1 -> https://opencode.ai/zen/go/v1
 #
-# qwen3.8-flash is registered in AutoClaw as reasoning:false, so this instance
-# does NOT force thinking injection (unlike the glm/kimi go lines). The shim
-# still adds the mandatory x-opencode-session header (vendor requirement since
-# 2026-09-06), reasoning echo, cache accounting and 429/503 absorption.
+# qwen3.8-flash mirrors the other OpenCode Go lines (glm/kimi): provider is
+# registered reasoning:true and this instance forces thinking injection so
+# behavior is uniform across all go relays. The shim still adds the mandatory
+# x-opencode-session header (vendor requirement since 2026-09-06), reasoning
+# echo, cache accounting and 429/503 absorption.
 #
 # Usage (in this directory):  .\start-shim-opencode-qwen.ps1
-# Logon auto-start: add a line to start-shim-hidden.vbs.
+# Logon auto-start: registered in start-shim-hidden.vbs.
 
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
@@ -19,6 +20,7 @@ Set-Location -Path $PSScriptRoot
 # --- OpenCode Go target (override defaults) ---
 $env:SHIM_PORT = '8795'
 $env:SHIM_TARGET = 'https://opencode.ai/zen/go/v1'
+$env:SHIM_FORCE_THINKING = 'enabled'  # match glm/kimi go lines: inject {"thinking":{"type":"enabled"}} on every body
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-opencode-qwen.log'
 
@@ -28,7 +30,7 @@ function Write-WrapperLog([string]$msg) {
     Add-Content -Path $wrapperLog -Value $line
 }
 
-Write-WrapperLog "starting auto-restart loop for: node server.js (OpenCode Go / qwen target)"
+Write-WrapperLog "starting auto-restart loop for: node server.js (OpenCode Go / qwen target, thinking forced)"
 Write-WrapperLog "wrapper log : $wrapperLog"
 
 $attempt = 0
