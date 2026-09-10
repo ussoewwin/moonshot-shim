@@ -150,11 +150,30 @@ function rotateIfBig() {
 }
 rotateIfBig();
 
+// --- broken-stream guard -------------------------------------------------
+// If the console/pipe that launched this shim goes away, writes to
+// stdout/stderr emit EPIPE. Without an 'error' listener Node turns that into
+// an uncaughtException, and because the uncaughtException handler calls log()
+// - which writes to stdout again - the process can spin in an
+// EPIPE -> log -> EPIPE loop. On 2026-09-10 that loop inflated
+// moonshot-shim.log to ~85 GB. Swallow stream errors and stop writing to a
+// stream once it is known broken.
+let stdoutDead = false;
+let stderrDead = false;
+try {
+  process.stdout.on('error', () => { stdoutDead = true; });
+  process.stderr.on('error', () => { stderrDead = true; });
+} catch {}
+
 // Open in append mode. We do NOT close it; process exit closes the fd.
 const logStream = fs.createWriteStream(LOG_PATH, { flags: 'a' });
 logStream.on('error', (err) => {
-  // last resort: console only
-  console.error(new Date().toISOString(), 'LOG STREAM ERROR', err.message);
+  // Do NOT route this through log()/console: a broken stdout/stderr must not
+  // re-enter the logging path. Report once, directly, behind a guard.
+  if (!stderrDead) {
+    try { process.stderr.write(new Date().toISOString() + ' LOG STREAM ERROR ' + err.message + '\n'); }
+    catch { stderrDead = true; }
+  }
 });
 
 function ts() {
@@ -163,7 +182,9 @@ function ts() {
 
 function log(...args) {
   const line = `${ts()} ${args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}\n`;
-  process.stdout.write(line);
+  if (!stdoutDead) {
+    try { process.stdout.write(line); } catch { stdoutDead = true; }
+  }
   try { logStream.write(line); } catch {}
 }
 
@@ -1031,12 +1052,24 @@ server.on('error', (err) => {
 // NOT die. This is the single most important reason the previous shim
 // vanished without a useful trace.
 
+let inCrashLog = false;
 process.on('uncaughtException', (err) => {
-  log('UNCAUGHT EXCEPTION', err && err.stack ? err.stack : String(err));
+  // Re-entrancy guard: the act of logging must never raise another
+  // uncaughtException, or this handler becomes an infinite write loop.
+  if (inCrashLog) return;
+  inCrashLog = true;
+  try { log('UNCAUGHT EXCEPTION', err && err.stack ? err.stack : String(err)); }
+  catch {}
+  finally { inCrashLog = false; }
 });
 process.on('unhandledRejection', (reason) => {
-  const s = reason && reason.stack ? reason.stack : String(reason);
-  log('UNHANDLED REJECTION', s);
+  if (inCrashLog) return;
+  inCrashLog = true;
+  try {
+    const s = reason && reason.stack ? reason.stack : String(reason);
+    log('UNHANDLED REJECTION', s);
+  } catch {}
+  finally { inCrashLog = false; }
 });
 
 // Long-running SSE responses can outlast Node's default HTTP timeouts.
