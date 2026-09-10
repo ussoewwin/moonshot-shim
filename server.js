@@ -65,10 +65,11 @@ const RETRY_429_ATTEMPTS = Math.max(1, parseInt(process.env.SHIM_RETRY429_ATTEMP
 // carries {"thinking": {"type": "enabled"}} (GLM-5.3-Flash defaults to disabled).
 // AUTO mode: inject "enabled" only when TARGET looks like a Z.ai endpoint, so
 // Moonshot-forwarding instances are unaffected. SHIM_FORCE_THINKING=enabled /
-// disabled forces it for every target; "off" disables injection entirely.
+// disabled forces it for every target; "off" forces thinking=disabled;
+// "strip" removes any thinking field entirely (for upstreams that reject it).
 const FORCE_THINKING_RAW = (process.env.SHIM_FORCE_THINKING || '').trim().toLowerCase();
 const FORCE_THINKING_MODE =
-  FORCE_THINKING_RAW === 'enabled' || FORCE_THINKING_RAW === 'disabled' || FORCE_THINKING_RAW === 'off'
+  FORCE_THINKING_RAW === 'enabled' || FORCE_THINKING_RAW === 'disabled' || FORCE_THINKING_RAW === 'off' || FORCE_THINKING_RAW === 'strip'
     ? FORCE_THINKING_RAW
     : (/z\.ai|bigmodel/i.test(TARGET) ? 'enabled' : '');
 const KEEPALIVE_INTERVAL_MS = Math.max(0, parseInt(process.env.SHIM_KEEPALIVE_MS || '10000', 10));
@@ -740,7 +741,13 @@ const server = http.createServer(async (req, res) => {
     if (json && typeof json === 'object' && FORCE_MODEL) {
       json.model = FORCE_MODEL;
     }
-    if (json && typeof json === 'object' && FORCE_THINKING_MODE === 'off') {
+    if (json && typeof json === 'object' && FORCE_THINKING_MODE === 'strip') {
+      // Dedicated path for upstreams whose API has no thinking field at all:
+      // remove it whether the client sent it or a previous patch added it, so
+      // it can never trigger 400 "unknown field thinking". Only instances that
+      // set SHIM_FORCE_THINKING=strip take this branch.
+      delete json.thinking;
+    } else if (json && typeof json === 'object' && FORCE_THINKING_MODE === 'off') {
       // thinking.type:"disabled" — GLM-5.3+ ignores it (Z.ai migration guide) but
       // DeepSeek honours it (proven reasoning=0 on go-fast 8795). go-fast GLM is retired.
       json.thinking = { type: 'disabled' };
@@ -1094,7 +1101,8 @@ server.listen(PORT, HOST, () => {
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
   log('point your client "Override OpenAI Base URL" at http://' + HOST + ':' + PORT + '/v1');
   log(RETRY_429_ENABLED ? 'rate-limit retry: ON (429/503 backoff base=' + RETRY_429_BASE_MS + 'ms attempts=' + RETRY_429_ATTEMPTS + ' max=' + RETRY_429_MAX_MS + 'ms)' : 'rate-limit retry: OFF');
-  if (FORCE_THINKING_MODE === 'off') log('thinking injection: SUPPRESS (rewrites thinking={"type":"disabled"} on every body)');
+  if (FORCE_THINKING_MODE === 'strip') log('thinking injection: STRIP (thinking field removed before relay)');
+  else if (FORCE_THINKING_MODE === 'off') log('thinking injection: SUPPRESS (rewrites thinking={"type":"disabled"} on every body)');
   else if (FORCE_THINKING_MODE) log('thinking injection: ON (thinking={"type":"' + FORCE_THINKING_MODE + '"} on bodies missing it)');
   else log('thinking injection: AUTO (inject enabled only for z.ai/bigmodel targets)');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
