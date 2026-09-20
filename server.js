@@ -104,6 +104,81 @@ const SECURITY_HEADERS = {
   'referrer-policy': 'no-referrer',
 };
 
+// --- egress header hygiene (2026-09-21) -----------------------------------
+// Headers that must never be forwarded upstream. Keeps third-party vendor
+// fingerprinting headers and our own shim credential off the wire. The
+// client's Authorization header is intentionally NOT listed here: upstream
+// authentication is derived from it. Override the whole list with
+// SHIM_STRIP_HEADERS (comma-separated).
+const STRIP_REQUEST_HEADERS = new Set(
+  (process.env.SHIM_STRIP_HEADERS ||
+    [
+      'x-shim-key',
+      'x-request-model',
+      'x-product',
+      'x-channel',
+      'x-tm',
+      'x-version',
+      'x-lang',
+      'x-client-type',
+      'x-client',
+      'x-trace-id',
+      'x_trace_id',
+      'x-forwarded-for',
+      'x-forwarded-host',
+      'x-forwarded-proto',
+      'x-real-ip',
+      'forwarded',
+      'via',
+      'cookie',
+    ].join(','))
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+// Optional: refuse non-loopback clients. OFF by default so a tunnel
+// deployment (Cloudflare/Tailscale) keeps working; set SHIM_LOOPBACK_ONLY=1
+// to allow only localhost clients.
+const LOOPBACK_ONLY = process.env.SHIM_LOOPBACK_ONLY === '1';
+
+// Optional deterministic redaction of the NEWEST message only. It never
+// touches the cached prefix, so prompt-cache hits are preserved. OFF by
+// default; set SHIM_REDACT_TAIL=1 to enable.
+const REDACT_TAIL = process.env.SHIM_REDACT_TAIL === '1';
+const REDACT_PATTERNS = [
+  [/sk-[A-Za-z0-9_-]{16,}/g, 'sk-***'],
+  [/AKIA[0-9A-Z]{16}/g, 'AKIA***'],
+  [/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '***JWT***'],
+  [/\b(Bearer)\s+[A-Za-z0-9._-]{16,}/gi, '$1 ***'],
+  [/\b(api[_-]?key|token|secret|password)(["']?\s*[:=]\s*["']?)[A-Za-z0-9._-]{12,}/gi, '$1$2***'],
+];
+
+function isLoopback(addr) {
+  if (!addr) return false;
+  return (
+    addr === '127.0.0.1' ||
+    addr === '::1' ||
+    addr === '::ffff:127.0.0.1' ||
+    addr.startsWith('127.')
+  );
+}
+
+// Redact secret-like patterns from the newest message only (cache-safe).
+function redactTail(json) {
+  if (!REDACT_TAIL || !json || !Array.isArray(json.messages) || json.messages.length === 0) return 0;
+  const last = json.messages[json.messages.length - 1];
+  if (!last || typeof last.content !== 'string') return 0;
+  let out = last.content;
+  for (const [re, rep] of REDACT_PATTERNS) out = out.replace(re, rep);
+  if (out !== last.content) {
+    last.content = out;
+    return 1;
+  }
+  return 0;
+}
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // --- OpenCode Go session header (x-opencode-session) ----------------------
@@ -661,7 +736,6 @@ const server = http.createServer(async (req, res) => {
   try {
     url = new URL(req.url, `http://${req.headers.host || HOST + ':' + PORT}`);
   } catch (e) {
-    safeWrite(res, '');
     res.writeHead(400, { 'content-type': 'text/plain' });
     safeEnd(res);
     return;
@@ -676,7 +750,6 @@ const server = http.createServer(async (req, res) => {
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
       errHeaders[key] = value;
     }
-    safeWrite(res, '');
     res.writeHead(405, errHeaders);
     safeEnd(res, JSON.stringify({ error: 'path or method not allowed' }));
     return;
@@ -704,6 +777,20 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(403, errHeaders);
     safeEnd(res, JSON.stringify({ error: 'shim secret required or invalid' }));
     log('SHIM SECRET REJECT', req.method, req.url, 'missing or invalid key');
+    return;
+  }
+
+  // --- Phase 1b: optional loopback-only client filter ----------------------
+  if (LOOPBACK_ONLY && !isLoopback(req.socket.remoteAddress)) {
+    stats.err++;
+    bumpStatus(403);
+    const errHeaders = { 'content-type': 'application/json' };
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      errHeaders[key] = value;
+    }
+    res.writeHead(403, errHeaders);
+    safeEnd(res, JSON.stringify({ error: 'non-loopback client rejected' }));
+    log('NON-LOOPBACK REJECT', req.socket.remoteAddress);
     return;
   }
 
@@ -758,6 +845,8 @@ const server = http.createServer(async (req, res) => {
       json.reasoning_effort = SHIM_REASONING_EFFORT;
     }
     if (json && Array.isArray(json.messages)) {
+      const redacted = redactTail(json);
+      if (redacted && DEBUG) dlog('redacted ' + redacted + ' newest-message secret pattern(s)');
       const n = patchMessagesForMoonshot(json);
       stats.patched += n;
       try {
@@ -773,6 +862,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   const upstreamHeaders = copyHeaders(req.headers);
+  // Egress header hygiene: drop vendor-fingerprint headers and our own shim
+  // credential before the request leaves the box. The client Authorization
+  // header is intentionally kept (upstream auth is derived from it).
+  for (const name of STRIP_REQUEST_HEADERS) delete upstreamHeaders[name];
   // Force identity (uncompressed) responses from upstream. Some providers
   // (Z.ai/GLM) gzip the body when the client advertises accept-encoding;
   // the client can decompress, but our usage/cache accounting would try to
@@ -1098,6 +1191,14 @@ server.listen(PORT, HOST, () => {
     : 'reasoning_content patcher: enabled (assistant.tool_calls -> placeholder " ")');
   log(`SSE keepalive: ${KEEPALIVE_INTERVAL_MS}ms  TCP keepalive: ${TCP_KEEPALIVE_MS}ms`);
   log('cache hit accounting: enabled (parses usage from SSE / JSON responses)');
+  log('egress header hygiene: stripping ' + STRIP_REQUEST_HEADERS.size + ' request header(s) before upstream');
+  log('egress target: fixed to ' + new URL(TARGET).host + ' (client cannot redirect)');
+  log(LOOPBACK_ONLY
+    ? 'client filter: LOOPBACK-ONLY (non-loopback clients rejected)'
+    : 'client filter: loopback-preferred (set SHIM_LOOPBACK_ONLY=1 to enforce)');
+  log(REDACT_TAIL
+    ? 'tail redaction: ON (newest message only; cached prefix untouched -> cache preserved)'
+    : 'tail redaction: OFF (set SHIM_REDACT_TAIL=1 to enable)');
   log('healthz: GET http://' + HOST + ':' + PORT + '/healthz');
   log('point your client "Override OpenAI Base URL" at http://' + HOST + ':' + PORT + '/v1');
   log(RETRY_429_ENABLED ? 'rate-limit retry: ON (429/503 backoff base=' + RETRY_429_BASE_MS + 'ms attempts=' + RETRY_429_ATTEMPTS + ' max=' + RETRY_429_MAX_MS + 'ms)' : 'rate-limit retry: OFF');

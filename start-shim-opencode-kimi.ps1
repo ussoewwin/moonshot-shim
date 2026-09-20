@@ -19,6 +19,8 @@ Set-Location -Path $PSScriptRoot
 $env:SHIM_PORT = '8794'
 $env:SHIM_TARGET = 'https://opencode.ai/zen/go/v1'
 $env:SHIM_FORCE_THINKING = 'enabled'  # kimi-k3 thinking on everywhere (owner request)
+$env:SHIM_LOOPBACK_ONLY = '1'  # hardening: reject non-loopback clients
+$env:SHIM_REDACT_TAIL   = '1'  # hardening: redact secrets in newest message only (prefix untouched -> cache preserved)
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-opencode-kimi.log'
 

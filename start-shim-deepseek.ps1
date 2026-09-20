@@ -20,6 +20,8 @@ Set-Location -Path $PSScriptRoot
 $env:SHIM_PORT = '8791'
 $env:SHIM_TARGET = 'https://api.deepseek.com/v1'
 $env:SHIM_FORCE_THINKING = 'enabled'  # inject {"thinking":{"type":"enabled"}} on every body lacking it
+$env:SHIM_LOOPBACK_ONLY = '1'  # hardening: reject non-loopback clients
+$env:SHIM_REDACT_TAIL   = '1'  # hardening: redact secrets in newest message only (prefix untouched -> cache preserved)
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-deepseek.log'
 

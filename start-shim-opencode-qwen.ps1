@@ -21,6 +21,8 @@ Set-Location -Path $PSScriptRoot
 $env:SHIM_PORT = '8795'
 $env:SHIM_TARGET = 'https://opencode.ai/zen/go/v1'
 $env:SHIM_FORCE_THINKING = 'enabled'  # match glm/kimi go lines: inject {"thinking":{"type":"enabled"}} on every body
+$env:SHIM_LOOPBACK_ONLY = '1'  # hardening: reject non-loopback clients
+$env:SHIM_REDACT_TAIL   = '1'  # hardening: redact secrets in newest message only (prefix untouched -> cache preserved)
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-opencode-qwen.log'
 

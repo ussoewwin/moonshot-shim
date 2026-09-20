@@ -17,6 +17,8 @@ $env:SHIM_PORT = '8797'
 $env:SHIM_TARGET = 'https://api.z.ai/api/coding/paas/v4'
 $env:SHIM_FORCE_THINKING = 'enabled'  # GLM-5.3-FLASH: forced thinking (disabled would error)
 $env:SHIM_REASONING_EFFORT = 'low'    # official minimal-thought mode for GLM-5.3/FLASH
+$env:SHIM_LOOPBACK_ONLY = '1'  # hardening: reject non-loopback clients
+$env:SHIM_REDACT_TAIL   = '1'  # hardening: redact secrets in newest message only (prefix untouched -> cache preserved)
 
 $wrapperLog = Join-Path $PSScriptRoot 'shim-wrapper-zai-low.log'
 

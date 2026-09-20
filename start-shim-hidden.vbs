@@ -2,9 +2,9 @@
 ' Launches all shim relays hidden at logon (no console windows).
 '   - start-shim-zai.cmd         (AutoClaw <-> Z.ai GLM relay, port 8789)
 '   - start-shim-deepseek.cmd    (AutoClaw <-> DeepSeek relay, port 8791)
-'   - start-shim-opencode.cmd    (AutoClaw <-> OpenCode Go DeepSeek relay, port 8792)
 '   - start-shim-opencode-glm.cmd (AutoClaw <-> OpenCode Go GLM relay, port 8793)
 '   - start-shim-opencode-qwen.cmd (AutoClaw <-> OpenCode Go qwen relay, port 8795)
+'   - start-shim-opencode-dsv41-flash.cmd (AutoClaw <-> OpenCode Go DeepSeek V4.1 Flash relay, port 8798)
 '   - start-img-mcp.cmd          (img-recognition MCP server, port 19690)
 '
 ' NOTE: set-reasoning is intentionally NOT auto-run here: it rewrites
@@ -20,10 +20,10 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-deepseek.cmd") & Chr(34), 0, False
-WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-glm.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-kimi.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-qwen.cmd") & Chr(34), 0, False
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-dsv41-flash.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai-low.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-img-mcp.cmd") & Chr(34), 0, False
 Set WshShell = Nothing
