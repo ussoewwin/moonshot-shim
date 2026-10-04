@@ -1,4 +1,4 @@
-﻿# moonshot-shim
+# moonshot-shim
 
 A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cline, etc.) use **reasoning models** — Z.ai's **GLM**, **DeepSeek** (direct or via OpenCode Go), and **Kimi K3 via OpenCode Go** — with **tool calling**, while keeping the **context-cache hit rate** as high as possible.
 
@@ -9,7 +9,6 @@ client ──▶ http://127.0.0.1:8793/v1 ──▶ https://opencode.ai/zen/go/v
 client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v1         (Kimi K3 via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8795/v1 ──▶ https://opencode.ai/zen/go/v1         (qwen3.8-flash via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8797/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM-5.3-Flash via Z.ai, thinking forced + reasoning_effort=low)
-client ──▶ http://127.0.0.1:8798/v1 ──▶ https://opencode.ai/zen/go/v1         (DeepSeek V4.1 Flash via OpenCode Go, upstream id deepseek-flash, thinking forced)
                 (one shim instance per provider line; env vars decide port + target)
 ```
 
@@ -55,7 +54,6 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-glm.cmd` — OpenCode Go (GLM-5.3-Flash) relay on port `8793` (`start-shim-opencode-glm.ps1`).
 - `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi K3) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
 - `start-shim-opencode-qwen.cmd` — OpenCode Go (qwen3.8-flash) relay on port `8795` (`start-shim-opencode-qwen.ps1`).
-- `start-shim-opencode-dsv41-flash.cmd` — OpenCode Go (DeepSeek V4.1 Flash, upstream id `deepseek-flash`) relay on port `8798` (`start-shim-opencode-dsv41-flash.ps1`).
 - `start-shim-zai-low.cmd` — Z.ai (GLM-5.3-Flash, LOW-EFFORT) relay on port `8797` (`start-shim-zai-low.ps1`).
 - `start-shim-hidden.vbs` — starts **all seven relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
 - `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
@@ -85,7 +83,6 @@ The shim is target-agnostic — run one instance per provider, each on its own p
 | OpenCode Go (Kimi K3) | `start-shim-opencode-kimi.cmd` | `8794` | `https://opencode.ai/zen/go/v1` |
 | Z.ai (GLM-5.3-Flash, LOW-EFFORT) | `start-shim-zai-low.cmd` | `8797` | `https://api.z.ai/api/coding/paas/v4` |
 | OpenCode Go (qwen3.8-flash) | `start-shim-opencode-qwen.cmd` | `8795` | `https://opencode.ai/zen/go/v1` |
-| OpenCode Go (DeepSeek V4.1 Flash) | `start-shim-opencode-dsv41-flash.cmd` | `8798` | `https://opencode.ai/zen/go/v1` |
 
 All of them require `reasoning_content` on assistant messages, so the patcher applies unchanged. The only provider-specific difference is the cache-field layout, which the shim reads either way. To add another provider, copy `start-shim-opencode-kimi.ps1`, change `SHIM_TARGET` + `SHIM_PORT`, add a `.cmd` wrapper and a VBS line, then update this table (and [MCP.md](./MCP.md) if the new provider is an MCP tool).
 
@@ -99,7 +96,6 @@ Set your client's **OpenAI base URL** to the shim's `/v1` endpoint and keep usin
 - OpenCode Go (Kimi K3) → `http://127.0.0.1:8794/v1`
 - OpenCode Go (qwen3.8-flash) → `http://127.0.0.1:8795/v1`
 - Z.ai (GLM-5.3-Flash, LOW-EFFORT) → `http://127.0.0.1:8797/v1`
-- OpenCode Go (DeepSeek V4.1 Flash) → `http://127.0.0.1:8798/v1`
 
 No tunnel is required. The shim binds to `127.0.0.1` and is meant for a single machine.
 
@@ -181,3 +177,4 @@ Boots a mock echo server, starts a fresh shim against it, sends a multi-turn too
 ## Related
 
 - **[MCP.md](./MCP.md)** — img-mcp: image-recognition MCP server (upload_image / recognize_image). Append future MCP tools to MCP.md.
+
