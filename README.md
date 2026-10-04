@@ -8,6 +8,7 @@ client ──▶ http://127.0.0.1:8791/v1 ──▶ https://api.deepseek.com/v1 
 client ──▶ http://127.0.0.1:8793/v1 ──▶ https://opencode.ai/zen/go/v1         (GLM-5.3-Flash via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v1         (Kimi K3 via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8795/v1 ──▶ https://opencode.ai/zen/go/v1         (qwen3.8-flash via OpenCode Go, thinking forced)
+client ──? http://127.0.0.1:8796/v1 ──? https://opencode.ai/zen/go/v1         (go-glm-5.3 via OpenCode Go, thinking stripped)
 client ──▶ http://127.0.0.1:8797/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM-5.3-Flash via Z.ai, thinking forced + reasoning_effort=low)
                 (one shim instance per provider line; env vars decide port + target)
 ```
