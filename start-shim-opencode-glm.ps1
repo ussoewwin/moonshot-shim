@@ -16,7 +16,7 @@
 #   body with    thinking -> 4/6 HTTP 400  (json: unknown field "thinking")
 # So this line must never forward the field, even if the client sends it.
 # GLM-5.3-Flash still returns reasoning_content without the field, so thinking
-# is not lost. Other go lines (kimi 8794 / qwen 8795) keep
+# is not lost. Other go lines (kimi 8794 / qwen 8795 / dsv41 8798) keep
 # SHIM_FORCE_THINKING=enabled because their models still accept the field.
 #
 # Usage (in this directory):  .\start-shim-opencode-glm.ps1
