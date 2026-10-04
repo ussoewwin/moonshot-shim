@@ -4,7 +4,6 @@ A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cl
 
 ```
 client ──▶ http://127.0.0.1:8789/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM, thinking auto-on)
-client ──▶ http://127.0.0.1:8791/v1 ──▶ https://api.deepseek.com/v1           (DeepSeek direct)
 client ──▶ http://127.0.0.1:8793/v1 ──▶ https://opencode.ai/zen/go/v1         (GLM-5.3-Flash via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v1         (Kimi K3 via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8795/v1 ──▶ https://opencode.ai/zen/go/v1         (qwen3.8-flash via OpenCode Go, thinking forced)
@@ -52,7 +51,6 @@ npm install        # installs undici
 On Windows, use the bundled launchers (each auto-restarts the process if it crashes):
 
 - `start-shim-zai.cmd` — Z.ai (GLM) relay on port `8789` (`start-shim-zai.ps1`).
-- `start-shim-deepseek.cmd` — DeepSeek (direct) relay on port `8791` (`start-shim-deepseek.ps1`).
 - `start-shim-opencode-glm.cmd` — OpenCode Go (GLM-5.3-Flash) relay on port `8793` (`start-shim-opencode-glm.ps1`).
 - `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi K3) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
 - `start-shim-opencode-qwen.cmd` — OpenCode Go (qwen3.8-flash) relay on port `8795` (`start-shim-opencode-qwen.ps1`).
@@ -82,7 +80,6 @@ The shim is target-agnostic — run one instance per provider, each on its own p
 | Provider | Launcher | Port | `SHIM_TARGET` |
 |---|---|---|---|
 | Z.ai (GLM) | `start-shim-zai.cmd` | `8789` | `https://api.z.ai/api/coding/paas/v4` |
-| DeepSeek (direct) | `start-shim-deepseek.cmd` | `8791` | `https://api.deepseek.com/v1` |
 | OpenCode Go (GLM-5.3-Flash) | `start-shim-opencode-glm.cmd` | `8793` | `https://opencode.ai/zen/go/v1` |
 | OpenCode Go (Kimi K3) | `start-shim-opencode-kimi.cmd` | `8794` | `https://opencode.ai/zen/go/v1` |
 | Z.ai (GLM-5.3-Flash, LOW-EFFORT) | `start-shim-zai-low.cmd` | `8797` | `https://api.z.ai/api/coding/paas/v4` |
@@ -97,7 +94,6 @@ All of them require `reasoning_content` on assistant messages, so the patcher ap
 Set your client's **OpenAI base URL** to the shim's `/v1` endpoint and keep using the provider's own API key.
 
 - Z.ai (GLM) → `http://127.0.0.1:8789/v1`
-- DeepSeek (direct) → `http://127.0.0.1:8791/v1`
 - OpenCode Go (GLM-5.3-Flash) → `http://127.0.0.1:8793/v1`
 - OpenCode Go (Kimi K3) → `http://127.0.0.1:8794/v1`
 - OpenCode Go (qwen3.8-flash) → `http://127.0.0.1:8795/v1`
