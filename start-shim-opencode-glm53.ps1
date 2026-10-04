@@ -5,23 +5,22 @@
 #
 #   AutoClaw -> http://127.0.0.1:8796/v1 -> https://opencode.ai/zen/go/v1
 #
-# OpenCode Go now carries GLM-5.3 (full model) in addition to GLM-5.3-Flash on
-# 8793. The upstream catalog id is "go-glm-5.3"; without SHIM_FORCE_MODEL the
-# shim would forward the client's model name as-is, so the force-model rewrite
-# maps every request to the upstream id. Thinking is stripped, matching the
-# 8793 line: OpenCode Go mixes backends and some reject the thinking field
-# (measured 2026-09-11, see start-shim-opencode-glm.ps1).
+# OpenCode Go carries GLM-5.3 (full model) in addition to GLM-5.3-Flash (8793).
+# The upstream catalog id is "glm-5.3"; the alias id "go-glm-5.3" 400s as
+# "Model is unavailable" (measured 2026-10-04), so the client model name is
+# forwarded unchanged (no SHIM_FORCE_MODEL on this line). Thinking is stripped
+# like the 8793 line: OpenCode Go mixes backends and some reject the thinking
+# field (measured 2026-09-11, see start-shim-opencode-glm.ps1).
+
 #
 # Usage (in this directory):  .\start-shim-opencode-glm53.ps1
 # Logon auto-start: registered in start-shim-hidden.vbs.
-
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
 # --- OpenCode Go target (override defaults) ---
 $env:SHIM_PORT = '8796'
 $env:SHIM_TARGET = 'https://opencode.ai/zen/go/v1'
-$env:SHIM_FORCE_MODEL = 'go-glm-5.3'
 $env:SHIM_FORCE_THINKING = 'strip'    # remove thinking entirely: mixed OpenCode Go backends 400 on it (see glm 8793 header)
 $env:SHIM_LOOPBACK_ONLY = '1'  # hardening: reject non-loopback clients
 $env:SHIM_REDACT_TAIL   = '1'  # hardening: redact secrets in newest message only (prefix untouched -> cache preserved)

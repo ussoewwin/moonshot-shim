@@ -55,7 +55,7 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-glm.cmd` — OpenCode Go (GLM-5.3-Flash) relay on port `8793` (`start-shim-opencode-glm.ps1`).
 - `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi K3) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
 - `start-shim-opencode-qwen.cmd` — OpenCode Go (qwen3.8-flash) relay on port `8795` (`start-shim-opencode-qwen.ps1`).
-- `start-shim-opencode-glm53.cmd` ? OpenCode Go (GLM-5.3, upstream id `go-glm-5.3`) relay on port `8796` (`start-shim-opencode-glm53.ps1`).
+- `start-shim-opencode-glm53.cmd` ? OpenCode Go (GLM-5.3, upstream id `glm-5.3`) relay on port `8796` (`start-shim-opencode-glm53.ps1`).
 - `start-shim-zai-low.cmd` — Z.ai (GLM-5.3-Flash, LOW-EFFORT) relay on port `8797` (`start-shim-zai-low.ps1`).
 - `start-shim-hidden.vbs` — starts **all seven relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
 - `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
