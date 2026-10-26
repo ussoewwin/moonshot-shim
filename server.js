@@ -89,6 +89,7 @@ if (SHIM_SECRET && SHIM_SECRET.length < 32) {
 // --- security hardening (Phase 0) ----------------------------------------
 const ALLOWED_PATHS = new Set([
   '/chat/completions',
+  '/messages',
   '/models',
   '/completions',
   '/embeddings',
