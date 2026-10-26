@@ -934,6 +934,21 @@ const server = http.createServer(async (req, res) => {
 
   bumpStatus(lastUpstreamStatus);
 
+  // Diagnostics (added 2026-10-27): on 4xx/5xx, tee the upstream error body into
+  // the log so a client-side "provider rejected the request" can be attributed to
+  // a cause. The body is re-sent to the client byte-for-byte (no concealment).
+  let errBodyTee = null;
+  if (lastUpstreamStatus >= 400) {
+    try {
+      const errTxt = await upstream.body.text();
+      const oneLine = String(errTxt).replace(/\r?\n/g, ' ').slice(0, 600);
+      log('UPSTREAM ERROR BODY', 'status=' + lastUpstreamStatus, req.method + ' ' + url.pathname, 'body=' + JSON.stringify(oneLine));
+      errBodyTee = Buffer.from(errTxt, 'utf8');
+    } catch (e) {
+      log('UPSTREAM ERROR BODY READ FAIL', 'status=' + lastUpstreamStatus, e.message);
+    }
+  }
+
   const respHeaders = copyHeaders(upstream.headers);
   const ct = String(upstream.headers['content-type'] || '');
   const isSSE = ct.includes('text/event-stream');
@@ -1052,6 +1067,17 @@ const server = http.createServer(async (req, res) => {
       log('TCP KEEPALIVE SET ERROR', err.message);
     }
   }
+  // If we already buffered the body for logging (4xx/5xx), send that buffer and
+  // finish; otherwise fall through to the streaming path below.
+  if (errBodyTee) {
+    respHeaders['content-length'] = String(errBodyTee.length);
+    delete respHeaders['transfer-encoding'];
+    safeWrite(res, errBodyTee);
+    safeEnd(res);
+    log(req.method + ' ' + url.pathname + ' -> ' + upstream.statusCode + ' ' + (Date.now() - started) + 'ms error-body-forwarded bytes=' + errBodyTee.length);
+    return;
+  }
+
   let lastWriteAt = Date.now();
   let keepAliveTimer = null;
   let keepAliveCount = 0;
