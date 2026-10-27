@@ -35,3 +35,6 @@ shim-wrapper-opencode-kimi.log
 
 # local backups
 *.bak-*
+
+# guard runtime findings log
+shim-guard.log

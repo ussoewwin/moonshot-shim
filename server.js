@@ -35,6 +35,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { request } from 'undici';
+import { createRequire } from 'node:module';
 
 const PORT = parseInt(process.env.SHIM_PORT || '8787', 10);
 const HOST = process.env.SHIM_HOST || '127.0.0.1';
@@ -78,6 +79,19 @@ const FORCE_MODEL = (process.env.SHIM_FORCE_MODEL || '').trim();
 // Z.ai GLM-5.3/FLASH: official minimal-thought mode (reasoning_effort="low" = mild inference).
 // Empty when unset -> injection skipped entirely (other instances unaffected).
 const SHIM_REASONING_EFFORT = (process.env.SHIM_REASONING_EFFORT || '').trim();
+// --- security guard (2026-10-28): default OFF; opt-in via SHIM_GUARD=log per instance.
+// Inspects assistant tool_call arguments for no-provenance URLs, fetch-exec shapes,
+// and credential-path patterns. Inspection only: traffic is never mutated.
+const GUARD_MODE = (process.env.SHIM_GUARD || 'off').trim().toLowerCase();
+let guard = null;
+let guardLog = null;
+if (GUARD_MODE === 'log') {
+  guard = createRequire(import.meta.url)('./guard.cjs');
+  guardLog = guard.makeGuardLogger(path.join(path.dirname(fileURLToPath(import.meta.url)), 'shim-guard.log'));
+} else if (GUARD_MODE !== 'off') {
+  console.error('FATAL: SHIM_GUARD must be off or log (got: ' + GUARD_MODE + ')');
+  process.exit(1);
+}
 
 // --- Shared Secret (Phase 1) --------------------------------------------
 const SHIM_SECRET = process.env.SHIM_SECRET || '';
@@ -828,6 +842,7 @@ const server = http.createServer(async (req, res) => {
     if (json && typeof json === 'object' && FORCE_MODEL) {
       json.model = FORCE_MODEL;
     }
+    var reqJsonForGuard = json;
     if (json && typeof json === 'object' && FORCE_THINKING_MODE === 'strip') {
       // Dedicated path for upstreams whose API has no thinking field at all:
       // remove it whether the client sent it or a previous patch added it, so
@@ -1140,6 +1155,21 @@ const server = http.createServer(async (req, res) => {
     try {
       if (isSSE) finalizeReasoningCapture(cap);
       else captureReasoningFromJSON(usageBuf);
+      if (guard && typeof reqJsonForGuard !== 'undefined' && reqJsonForGuard) {
+        try {
+          const gCalls = isSSE
+            ? [...cap.toolCalls.values()].filter((e) => e.id || e.name).map((e) => ({ id: e.id, name: e.name, args: e.args }))
+            : guard.extractToolCallsFromJsonBody(usageBuf);
+          if (gCalls && gCalls.length > 0) {
+            const report = guard.inspectAssistantToolCalls(gCalls, reqJsonForGuard);
+            for (const r of report) {
+              for (const f of r.findings) {
+                guardLog('GUARD model=' + String(reqJsonForGuard.model || '?') + ' tool=' + r.tool + ' kind=' + f.kind + ' detail=' + f.detail);
+              }
+            }
+          }
+        } catch (e) { log('GUARD ERROR', e.message); }
+      }
     } catch {}
     let usageStr = '';
     if (usage) {
@@ -1233,6 +1263,7 @@ server.listen(PORT, HOST, () => {
   else if (FORCE_THINKING_MODE) log('thinking injection: ON (thinking={"type":"' + FORCE_THINKING_MODE + '"} on bodies missing it)');
   else log('thinking injection: AUTO (inject enabled only for z.ai/bigmodel targets)');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
+  log('security guard: ' + GUARD_MODE);
 });
 
 function shutdown(sig) {
