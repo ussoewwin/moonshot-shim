@@ -127,6 +127,7 @@ All settings are environment variables:
 | `SHIM_REASONING_EFFORT` | *(empty)* | If set (e.g. `low`), forces `reasoning_effort` on every body. Z.ai docs: GLM-5.3/FLASH support `max`/`high`/`low` only; `low` = mild inference (cheapest official thought mode). **`start-shim-zai-low.cmd` sets `low`.** |
 | `SHIM_LOG` | `./moonshot-shim.log` | Log file path |
 | `SHIM_DEBUG` | *(unset)* | `1` = verbose patching logs |
+| `SHIM_GUARD` | `off` | `log` = inspect assistant tool-call arguments for no-provenance URLs, fetch-exec shapes (`curl\|sh` etc.), and credential paths; findings appended to `shim-guard.log`. Inspection only - traffic is never mutated. Any other value aborts startup |
 
 ## Cache hit rate
 
