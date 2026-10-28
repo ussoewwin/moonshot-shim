@@ -86,6 +86,30 @@ evidence" applied to the log itself.
 - One line altered: `ok: false, badLine: 3` (the edited line)
 - Restart boundary tolerated: `runs: 3`
 
+### External head anchoring
+
+A chain detects edits *within* the file, but not deletion or wholesale replacement
+of it. Each process run therefore appends its first chained hash to a separate
+file, `shim-guard.heads`:
+
+```
+<ISO timestamp> <first-hash-of-run>
+```
+
+`verifyHeads(logPath)` checks that every recorded head still appears in the
+current log. If an attacker deletes or replaces `shim-guard.log`, the heads file
+still points at chains that are gone and verification fails.
+
+Honest scope of this protection: it catches deletion/replacement of the log. It
+does **not** catch an attacker who can edit both files consistently — for that the
+heads file must be copied off-box (a git commit, a backup). The two files live in
+the same directory by default, which is a convenience, not a security property.
+
+Measured:
+
+- Normal multi-run log: `chain ok:true`, `heads ok:true`
+- Log replaced with one forged line: `heads ok:false, missing:[<2 run heads>]`
+
 ---
 
 ## 4. Credential read → outbound-send chain
@@ -293,6 +317,10 @@ README.
    executes tool calls instantly has already started before any record exists.
 5. **Restart boundaries.** The hash chain resets on process restart. The verifier
    handles this, but a log that spans many restarts has multiple chains.
+7. **Head anchoring is same-directory by default.** Deleting the log alone is
+   detected; deleting both `shim-guard.log` and `shim-guard.heads` together, or
+   rewriting both consistently, is not. Off-box copies of the heads file are the
+   operator’s responsibility.
 6. **Not a weight-side detector.** The guard cannot see model weight edits.
 
 ---

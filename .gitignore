@@ -38,3 +38,4 @@ shim-wrapper-opencode-kimi.log
 
 # guard runtime findings log
 shim-guard.log
+shim-guard.heads
