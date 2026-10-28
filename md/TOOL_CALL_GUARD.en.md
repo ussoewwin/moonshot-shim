@@ -19,7 +19,7 @@
 8. [Enabling and operating it](#8-enabling-and-operating-it)
 9. [Measured behaviour](#9-measured-behaviour)
 10. [Known limits](#10-known-limits)
-11. [Relationship to the other security measures](#11-relationship-to-the-other-security-measures)
+11. [The other security measures, and where each is documented](#11-the-other-security-measures-and-where-each-is-documented)
 
 ---
 
@@ -280,16 +280,38 @@ These are stated so nobody assumes the guard covers them.
 
 ---
 
-## 11. Relationship to the other security measures
+## 11. The other security measures, and where each is documented
 
-| Measure | Concern | Where |
-|---|---|---|
-| Path/method allow-list | what the client may ask the shim for | `server.js`, see [SECURITY_IMPLEMENTED.en.md](./SECURITY_IMPLEMENTED.en.md) |
-| Shared secret (`SHIM_SECRET`) | who may talk to the shim | see [SHARED_SECRET_IMPLEMENTED.en.md](./SHARED_SECRET_IMPLEMENTED.en.md) |
-| Loopback-only filter | whether non-local clients are refused | `server.js` |
-| Egress header hygiene | which client headers reach the upstream | `server.js` (2026-09-21) |
-| Upstream error-body logging | why an upstream refused a request | `server.js` (`UPSTREAM ERROR BODY`) |
-| **Tool-call guard** | **what the model is about to hand to a tool** | **`guard.cjs` (this document)** |
+This document is the single entry point for everything security-related in the shim.
+The guard is one measure among several; the rest are listed here with what they
+protect and where their detail lives, so a reader never has to hunt through the
+root README for a link.
 
-The guard is the only measure on the *response* side. Every other measure guards
-the request path in.
+| Measure | Concern | Where it lives | Detail |
+| --- | --- | --- | --- |
+| **Tool-call guard** (`SHIM_GUARD=log`) | what the model is about to hand to a tool | `guard.cjs` + hook in `server.js` | this document |
+| Path / method allow-list | what the client may ask the shim for | `server.js` (`ALLOWED_PATHS`, `ALLOWED_METHODS`) | [SECURITY_IMPLEMENTED.en.md](./SECURITY_IMPLEMENTED.en.md) |
+| Shared secret (`SHIM_SECRET` + `X-Shim-Key`) | who may talk to the shim | `server.js` | [SHARED_SECRET_IMPLEMENTED.en.md](./SHARED_SECRET_IMPLEMENTED.en.md) |
+| Loopback-only client filter (`SHIM_LOOPBACK_ONLY`) | whether non-local clients are refused | `server.js` | [SECURITY_IMPLEMENTED.en.md](./SECURITY_IMPLEMENTED.en.md) |
+| Egress header hygiene (2026-09-21) | which client headers reach the upstream | `server.js` (`STRIP_REQUEST_HEADERS`) | [SECURITY_HARDCENING_PLAN.en.md](./SECURITY_HARDCENING_PLAN.en.md) |
+| Upstream error-body logging | why an upstream refused a request | `server.js` (`UPSTREAM ERROR BODY`) | this document, §7 |
+
+### Why the guard sits where it does in this list
+
+Every other measure guards the **request path in** — who may call the shim, with
+which path, carrying which headers. The guard is the only measure on the
+**response path out**, which is why it is the only one that can see what a model
+asked a tool to do. The two sides answer different questions and neither
+substitutes for the other: a perfect inbound filter does nothing about a
+compromised model, and the guard does nothing about an open port.
+
+### Planned but not implemented
+
+- **Hash-chained request log** — each log line committing to the previous one, so
+  the record itself cannot be edited after the fact. `shim-guard.log` is currently
+  a plain append log (§10, limit 6).
+- **Blocking mode** (`SHIM_GUARD=block`) — see §6 for the conditions under which it
+  would be acceptable.
+- **Cache-key hardening and divergence measurement** — comparing response shape per
+  input family to detect a silently swapped model. Not started; noted here so the
+  gap is visible rather than assumed closed.
