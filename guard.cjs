@@ -128,25 +128,58 @@ const GUARD_LOG_MAX = 10 * 1024 * 1024; // rotate to .1, mirroring the main shim
 // each line is "prevHash sha256(timestamp line prevHash)". Editing any prior
 // line changes every subsequent hash; verify with verifyChain below.
 let lastHash = "0".repeat(64);
+
+// External head anchoring: each process run records its FIRST chained hash in a
+// separate file (shim-guard.heads, alongside the log). Deleting or wholesale-
+// replacing shim-guard.log then leaves the heads record pointing at a chain that
+// no longer exists, and verifyHeads() reports it. This does not protect against an
+// attacker who can edit BOTH files consistently - for that the heads file must be
+// copied off-box (git commit, backup). Stated plainly rather than overclaimed.
 function makeGuardLogger(guardLogPath) {
+  const headsPath = String(guardLogPath).replace(/[.]log$/, "") + ".heads";
+  let anchored = false;
+  function anchorHead(firstHash, ts) {
+    if (anchored) return;
+    anchored = true;
+    try { fs.appendFileSync(headsPath, ts + " " + firstHash + "\n"); } catch {}
+  }
   return function guardLog(line) {
     try {
       try {
         const st = fs.statSync(guardLogPath);
         if (st.size > GUARD_LOG_MAX) {
-          fs.renameSync(guardLogPath, guardLogPath + '.1');
+          fs.renameSync(guardLogPath, guardLogPath + ".1");
           lastHash = "0".repeat(64);
+          anchored = false; // next written line anchors a new run
         }
       } catch {}
       const ts = new Date().toISOString();
-      const h = crypto.createHash("sha256").update(ts + " " + line + " " + lastHash, "utf8").digest("hex");
-      fs.appendFileSync(guardLogPath, lastHash + ' ' + h + ' ' + ts + ' ' + line + '\n');
+      const prev = lastHash;
+      const h = crypto.createHash("sha256").update(ts + " " + line + " " + prev, "utf8").digest("hex");
+      fs.appendFileSync(guardLogPath, prev + " " + h + " " + ts + " " + line + "\n");
+      if (prev === "0".repeat(64)) anchorHead(h, ts);
       lastHash = h;
     } catch {}
   };
 }
 
-// Verify the hash chain of an existing log file. Returns {ok, badLine}.
+// Check that every head recorded in <log>.heads still starts a chain present in
+// the current log text. Returns {ok, missing:[...]}.
+function verifyHeads(logPath) {
+  const headsPath = String(logPath).replace(/[.]log$/, "") + ".heads";
+  const out = { ok: true, missing: [] };
+  try {
+    const heads = fs.readFileSync(headsPath, "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => l.trim().split(" ")[1]);
+    const body = fs.readFileSync(logPath, "utf8");
+    for (const h of heads) {
+      if (h && !body.includes(" " + h + " ")) { out.ok = false; out.missing.push(h); }
+    }
+  } catch {
+    out.ok = false;
+    out.missing.push('<heads file unreadable>');
+  }
+  return out;
+}// Verify the hash chain of an existing log file. Returns {ok, badLine}.
 // Verify hash chain, allowing restart boundaries. A new process run starts
 // with prevHash=0 (all zeros); within each run the chain must hold exactly.
 // Returns {ok, badLine, runs}.
@@ -185,4 +218,4 @@ function extractToolCallsFromJsonBody(bodyText) {
     return [];
   }
 }
-module.exports = { inspectAssistantToolCalls, extractToolCallsFromJsonBody, makeGuardLogger, verifyChain };
+module.exports = { inspectAssistantToolCalls, extractToolCallsFromJsonBody, makeGuardLogger, verifyChain, verifyHeads };
