@@ -85,8 +85,10 @@ const SHIM_REASONING_EFFORT = (process.env.SHIM_REASONING_EFFORT || '').trim();
 const GUARD_MODE = (process.env.SHIM_GUARD || 'off').trim().toLowerCase();
 let guard = null;
 let guardLog = null;
+let guardAttr = null;
 if (GUARD_MODE === 'log') {
   guard = createRequire(import.meta.url)('./guard.cjs');
+  guardAttr = createRequire(import.meta.url)('./guard-attribution.cjs');
   guardLog = guard.makeGuardLogger(path.join(path.dirname(fileURLToPath(import.meta.url)), 'shim-guard.log'));
 } else if (GUARD_MODE !== 'off') {
   console.error('FATAL: SHIM_GUARD must be off or log (got: ' + GUARD_MODE + ')');
@@ -1155,6 +1157,17 @@ const server = http.createServer(async (req, res) => {
     try {
       if (isSSE) finalizeReasoningCapture(cap);
       else captureReasoningFromJSON(usageBuf);
+      // --- attribution helpers (session-scoped) ---
+      function guardSessionKey() {
+        try {
+          if (OPENCODE_GO && typeof opencodeSessionId === 'function') return opencodeSessionId(reqJsonForGuard);
+        } catch {}
+        try {
+          const first = reqJsonForGuard && Array.isArray(reqJsonForGuard.messages) ? reqJsonForGuard.messages[0] : null;
+          return 'shim-' + crypto.createHash('sha256').update(JSON.stringify(first || {}), 'utf8').digest('hex').slice(0, 16);
+        } catch { return 'shim-anon'; }
+      }
+      const guardSeenSessions = new Set();
       if (guard && typeof reqJsonForGuard !== 'undefined' && reqJsonForGuard) {
         try {
           const gCalls = isSSE
@@ -1165,6 +1178,42 @@ const server = http.createServer(async (req, res) => {
             for (const r of report) {
               for (const f of r.findings) {
                 guardLog('GUARD model=' + String(reqJsonForGuard.model || '?') + ' tool=' + r.tool + ' kind=' + f.kind + ' detail=' + f.detail);
+              }
+            }
+            // --- attribution passes (session-scoped) ---
+            const sk = guardSessionKey();
+            const ts = new Date().toISOString();
+            const findingsFlat = [];
+            for (const r of report) for (const f of r.findings) findingsFlat.push(f);
+
+            // (a) credential read -> outbound send chain (escalated single line per session)
+            guardAttr.recordChain(sk, findingsFlat, ts, (stage) => guardLog('CHAIN ' + sk + ' ' + stage + ' model=' + String(reqJsonForGuard.model || '?')));
+
+            // (b) trigger conditions present in the system prompt (recorded once per session)
+            if (!guardSeenSessions.has(sk + ':trig')) {
+              const trig = guardAttr.triggerConditions(reqJsonForGuard);
+              if (trig.length > 0) {
+                guardLog('TRIGGER ' + sk + ' system_prompt_conditions=' + JSON.stringify(trig));
+                guardSeenSessions.add(sk + ':trig');
+              }
+            }
+
+            // (d) session fingerprint pinned once per session (model id + sys/tool hashes)
+            if (!guardSeenSessions.has(sk + ':fp')) {
+              const fp = guardAttr.fingerprint(reqJsonForGuard);
+              guardLog('PIN ' + sk + ' model=' + fp.model + ' sys=' + fp.sysHash + ' tools=' + fp.toolHash);
+              guardSeenSessions.add(sk + ':fp');
+            }
+
+            // (c) tool-result provenance: which call emitted which URL, recorded once per (session,call)
+            for (const r of report) {
+              const key = sk + ':prov:' + (r.callId || r.tool);
+              if (!guardSeenSessions.has(key)) {
+                const prov = guardAttr.provenanceOfToolResult(r.tool, r.findings.map((f) => f.detail).join(';'), JSON.stringify(gCalls.map((c) => c.args)));
+                if (prov) {
+                  guardLog('PROV ' + sk + ' tool=' + prov.tool + ' args=' + prov.argsSummary + ' urls=' + JSON.stringify(prov.urls));
+                  guardSeenSessions.add(key);
+                }
               }
             }
           }
