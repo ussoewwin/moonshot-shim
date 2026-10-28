@@ -16,11 +16,15 @@ const crypto = require('node:crypto');
 // whether a credential_path finding was seen, and when a later finding is an
 // outbound shape (fetch_exec or a POST to a location with no provenance), we
 // emit a single escalated line that ties the two events together.
-const sessionState = new Map(); // key -> { credentialAt: string|null, firstHost: string|null }
+const sessionState = new Map(); // key -> { credentialAt: string|null, cycles: number }
 
+// Every read->send cycle is recorded. stage-1 marks the first credential read
+// since the last escalation; each escalation carries n=<cycle number> so a
+// second (or third) cycle in the same conversation is visible instead of
+// swallowed by a once-per-session rule.
 function recordChain(sessionKey, findings, nowIso, emit) {
   if (!sessionKey) return;
-  const st = sessionState.get(sessionKey) || { credentialAt: null, firstHost: null };
+  const st = sessionState.get(sessionKey) || { credentialAt: null, cycles: 0 };
   const hasCred = findings.some((f) => f.kind === 'credential_path');
   const hasOutbound = findings.some((f) => f.kind === 'fetch_exec_shape' || f.kind === 'url_no_provenance' || f.kind === 'host_no_provenance');
   if (hasCred && !st.credentialAt) {
@@ -28,9 +32,9 @@ function recordChain(sessionKey, findings, nowIso, emit) {
     emit('CHAIN_STAGE1 credential_read');
   }
   if (st.credentialAt && hasOutbound) {
-    emit('CHAIN_STAGE2 credential_read_then_outbound first_seen=' + st.credentialAt);
-    // consume: one escalated line per session is enough
-    st.credentialAt = null;
+    st.cycles += 1;
+    emit('CHAIN_STAGE2 credential_read_then_outbound n=' + st.cycles + ' first_seen=' + st.credentialAt);
+    st.credentialAt = null; // this cycle closed; a later credential read re-opens it
   }
   sessionState.set(sessionKey, st);
 }

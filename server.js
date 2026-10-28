@@ -86,6 +86,30 @@ const GUARD_MODE = (process.env.SHIM_GUARD || 'off').trim().toLowerCase();
 let guard = null;
 let guardLog = null;
 let guardAttr = null;
+// Per-conversation attribution state, kept across requests. Keyed by the
+// conversation key (salted hash, no user content). value = { pin, trig }.
+// Bounded: oldest entries evicted past GUARD_SESSION_MAX so a long-lived
+// process cannot grow without limit.
+const GUARD_SESSION_MAX = 5000;
+// Conversation ids per TCP session: reused across requests so a prompt edit
+// mid-conversation does not look like a brand-new conversation.
+const guardConvIds = new Map();
+const guardSessions = new Map();
+function guardSessionState(sk) {
+  let st = guardSessions.get(sk);
+  if (!st) {
+    if (guardSessions.size >= GUARD_SESSION_MAX) {
+      const oldest = guardSessions.keys().next().value;
+      guardSessions.delete(oldest);
+    }
+    st = { pin: null, trig: null };
+    guardSessions.set(sk, st);
+  } else {
+    guardSessions.delete(sk);
+    guardSessions.set(sk, st); // refresh recency
+  }
+  return st;
+}
 if (GUARD_MODE === 'log') {
   guard = createRequire(import.meta.url)('./guard.cjs');
   guardAttr = createRequire(import.meta.url)('./guard-attribution.cjs');
@@ -1159,15 +1183,27 @@ const server = http.createServer(async (req, res) => {
       else captureReasoningFromJSON(usageBuf);
       // --- attribution helpers (session-scoped) ---
       function guardSessionKey() {
-        try {
-          if (OPENCODE_GO && typeof opencodeSessionId === 'function') return opencodeSessionId(reqJsonForGuard);
-        } catch {}
-        try {
-          const first = reqJsonForGuard && Array.isArray(reqJsonForGuard.messages) ? reqJsonForGuard.messages[0] : null;
-          return 'shim-' + crypto.createHash('sha256').update(JSON.stringify(first || {}), 'utf8').digest('hex').slice(0, 16);
-        } catch { return 'shim-anon'; }
+        // 1. client-supplied opaque id wins (never derived from user content)
+        const supplied = String(req.headers['x-shim-conversation'] || '').trim();
+        if (supplied) {
+          return 'conv-' + crypto.createHash('sha256').update(supplied, 'utf8').digest('hex').slice(0, 24);
+        }
+        // 2. otherwise reuse the id minted for this TCP session (keep-alive connection)
+        const sock = res.socket || req.socket;
+        if (sock) {
+          let cid = guardConvIds.get(sock);
+          if (!cid) {
+            if (guardConvIds.size > GUARD_SESSION_MAX) {
+              const oldest = guardConvIds.keys().next().value;
+              guardConvIds.delete(oldest);
+            }
+            cid = 'conv-' + crypto.createHash('sha256').update(String(process.pid) + ':' + Date.now() + ':' + Math.random(), 'utf8').digest('hex').slice(0, 24);
+            guardConvIds.set(sock, cid);
+          }
+          return cid;
+        }
+        return 'conv-anon';
       }
-      const guardSeenSessions = new Set();
       if (guard && typeof reqJsonForGuard !== 'undefined' && reqJsonForGuard) {
         try {
           const gCalls = isSSE
@@ -1189,30 +1225,37 @@ const server = http.createServer(async (req, res) => {
             // (a) credential read -> outbound send chain (escalated single line per session)
             guardAttr.recordChain(sk, findingsFlat, ts, (stage) => guardLog('CHAIN ' + sk + ' ' + stage + ' model=' + String(reqJsonForGuard.model || '?')));
 
-            // (b) trigger conditions present in the system prompt (recorded once per session)
-            if (!guardSeenSessions.has(sk + ':trig')) {
-              const trig = guardAttr.triggerConditions(reqJsonForGuard);
-              if (trig.length > 0) {
-                guardLog('TRIGGER ' + sk + ' system_prompt_conditions=' + JSON.stringify(trig));
-                guardSeenSessions.add(sk + ':trig');
-              }
+            // (d) fingerprint: pin once per conversation, and DETECT silent swaps.
+            // The pin is compared against every subsequent request for this
+            // conversation; a changed model id / system prompt / tool definitions
+            // emits REPIN (the quiet-replacement case the audit warned about).
+            const gstate = guardSessionState(sk);
+            const fp = guardAttr.fingerprint(reqJsonForGuard);
+            const fpNow = fp.model + '/' + fp.sysHash + '/' + fp.toolHash;
+            if (gstate.pin !== fpNow) {
+              const repin = gstate.pin !== null;
+              guardLog((repin ? 'REPIN ' : 'PIN ') + sk + ' model=' + fp.model + ' sys=' + fp.sysHash + ' tools=' + fp.toolHash);
+              gstate.pin = fpNow;
+              gstate.trig = null; // force a TRIGGER rescan under the new prompt
             }
 
-            // (d) session fingerprint pinned once per session (model id + sys/tool hashes)
-            if (!guardSeenSessions.has(sk + ':fp')) {
-              const fp = guardAttr.fingerprint(reqJsonForGuard);
-              guardLog('PIN ' + sk + ' model=' + fp.model + ' sys=' + fp.sysHash + ' tools=' + fp.toolHash);
-              guardSeenSessions.add(sk + ':fp');
+            // (b) trigger conditions in the system prompt: recorded whenever the
+            // effective prompt/tools state changes (so a swapped prompt's own
+            // trigger conditions are captured, not just the first ones seen).
+            if (gstate.trig === null) {
+              const trig = guardAttr.triggerConditions(reqJsonForGuard);
+                guardLog('TRIGGER ' + sk + ' system_prompt_conditions=' + JSON.stringify(trig));
+              gstate.trig = JSON.stringify(trig);
             }
 
             // (c) tool-result provenance: which call emitted which URL, recorded once per (session,call)
             for (const r of report) {
-              const key = sk + ':prov:' + (r.callId || r.tool);
-              if (!guardSeenSessions.has(key)) {
+              const pkey = 'prov:' + (r.callId || r.tool);
+              if (!gstate[pkey]) {
                 const prov = guardAttr.provenanceOfToolResult(r.tool, r.findings.map((f) => f.detail).join(';'), JSON.stringify(gCalls.map((c) => c.args)));
                 if (prov) {
                   guardLog('PROV ' + sk + ' tool=' + prov.tool + ' args=' + prov.argsSummary + ' urls=' + JSON.stringify(prov.urls));
-                  guardSeenSessions.add(key);
+                  gstate[pkey] = true;
                 }
               }
             }
