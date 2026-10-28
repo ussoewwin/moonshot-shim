@@ -215,6 +215,22 @@ the value stored for that conversation (module-scope `guardSessions`, LRU-bounde
 5000 conversations). The first request emits `PIN`; any later request whose model id,
 system prompt hash, or tool-definition hash differs emits `REPIN` instead:
 
+Measured end-to-end (2026-10-28): two requests on one conversation, system prompt
+changed between them, model returning **no tool call on either turn**:
+
+```
+PIN    conv=… model=glm-5.3-flash sys=01e3c441… tools=b545ef65…
+TRIGGER conv=… system_prompt_conditions=["2026","Client Acme"]
+REPIN  conv=… model=glm-5.3-flash sys=1720f84d… tools=b545ef65…
+TRIGGER conv=… system_prompt_conditions=["2027","Client Globex"]
+```
+
+The PIN comparison runs on every inspected response — it is deliberately hoisted
+out of the tool-call branch, because a silent swap is most visible precisely on
+turns that produce no tool call. A previous revision kept it inside that branch,
+which made swap detection depend on the model happening to emit a tool call; that
+hole is closed.
+
 ```
 PIN  <conv> model=<model-id> sys=<sha256-of-system-prompt> tools=<sha256-of-tool-definitions>
 REPIN <conv> model=<model-id> sys=<new-hash> tools=<tools-hash>
