@@ -209,6 +209,14 @@ produce a tool call.
 
 All lines in `shim-guard.log` are hash-chained (see §3). Message types:
 
+Every message carries `conv=<session-key>`: a salted SHA-256 hash of the
+conversation seed (the same stable id used for OpenCode Go cache routing, or a
+hash of the first message when that is unavailable). The key lets findings from
+one conversation be joined after the fact without writing any user content to
+the log.
+
+### Message types
+
 | Prefix | Meaning |
 |---|---|
 | `GUARD` | A suspicious tool call (provenance, fetch-exec shape, credential path) |
