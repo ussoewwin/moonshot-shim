@@ -167,16 +167,26 @@ function makeGuardLogger(guardLogPath) {
 // the current log text. Returns {ok, missing:[...]}.
 function verifyHeads(logPath) {
   const headsPath = String(logPath).replace(/[.]log$/, "") + ".heads";
-  const out = { ok: true, missing: [] };
+  const out = { ok: true, missing: [], anchored: 0 };
+  let heads;
   try {
-    const heads = fs.readFileSync(headsPath, "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => l.trim().split(" ")[1]);
+    heads = fs.readFileSync(headsPath, "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => l.trim().split(" ")[1]);
+  } catch {
+    return out; // no heads file: nothing was ever anchored, not a failure
+  }
+  try {
     const body = fs.readFileSync(logPath, "utf8");
     for (const h of heads) {
-      if (h && !body.includes(" " + h + " ")) { out.ok = false; out.missing.push(h); }
+      if (!h) continue;
+      out.anchored++;
+      if (!body.includes(" " + h + " ")) {
+        out.ok = false;
+        out.missing.push(h);
+      }
     }
   } catch {
     out.ok = false;
-    out.missing.push('<heads file unreadable>');
+    out.missing.push('<log file unreadable>');
   }
   return out;
 }// Verify the hash chain of an existing log file. Returns {ok, badLine}.
