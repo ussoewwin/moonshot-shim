@@ -1,13 +1,13 @@
 # moonshot-shim
 
-A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cline, etc.) use **reasoning models** — Z.ai's **GLM**, **DeepSeek** (direct or via OpenCode Go), and **Kimi K3 via OpenCode Go** — with **tool calling**, while keeping the **context-cache hit rate** as high as possible.
+A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cline, etc.) use **reasoning models** — Z.ai's **GLM** and the **OpenCode Go** catalog (GLM, Kimi K3, qwen3.8-flash, DeepSeek V4.1 Flash) — with **tool calling**, while keeping the **context-cache hit rate** as high as possible. It also carries an optional **release-time guard** that inspects what a model is about to hand to a tool.
 
 ```
 client ──▶ http://127.0.0.1:8789/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM, thinking auto-on)
 client ──▶ http://127.0.0.1:8793/v1 ──▶ https://opencode.ai/zen/go/v1         (GLM-5.3-Flash via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v1         (Kimi K3 via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8795/v1 ──▶ https://opencode.ai/zen/go/v1         (qwen3.8-flash via OpenCode Go, thinking forced)
-client ──? http://127.0.0.1:8796/v1 ──? https://opencode.ai/zen/go/v1         (go-glm-5.3 via OpenCode Go, thinking stripped)
+client ──▶ http://127.0.0.1:8796/v1 ──▶ https://opencode.ai/zen/go/v1         (go-glm-5.3 via OpenCode Go, thinking stripped)
 client ──▶ http://127.0.0.1:8797/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM-5.3-Flash via Z.ai, thinking forced + reasoning_effort=low)
 client ──▶ http://127.0.0.1:8798/v1 ──▶ https://opencode.ai/zen/go/v1         (DeepSeek V4.1 Flash via OpenCode Go, upstream id deepseek-flash, thinking forced)
                 (one shim instance per provider line; env vars decide port + target)
@@ -36,6 +36,8 @@ This shim sits in front of the provider and patches the outgoing request so mult
 - **Resilience** — retries transient upstream errors, keeps SSE streams alive with keepalive comments, and survives crashes. Every launcher runs under an auto-restart wrapper, and `start-shim-hidden.vbs` starts all instances at logon.
 - **Rate-limit (429/503) absorption** — when the upstream returns `429` (TPM window exceeded / engine overloaded) or `503`, the shim retries the **byte-identical** body with exponential backoff (default 30s / 60s / 120s / 240s, up to 4 attempts) so the client never sees the failure. Retrying the same bytes keeps the provider's prefix cache intact, and OpenClaw-style clients avoid tripping their auth-profile cooldown. Logged as `UPSTREAM RATE-LIMIT RETRY`.
 - **Thinking injection** — GLM/DeepSeek/Kimi reasoning models only emit `reasoning_content` when the request body carries `{"thinking": {"type": "enabled"}}`. Every production instance runs with `SHIM_FORCE_THINKING=enabled`, so thinking is on everywhere without client-side changes. Controlled by `SHIM_FORCE_THINKING`.
+- **Upstream error bodies are logged and forwarded** — on a 4xx/5xx the upstream body is written to the log (`UPSTREAM ERROR BODY`) and relayed to the client byte-for-byte, so a client message like "the model service rejected the request" can be traced to its actual cause (e.g. `data_inspection_failed`, `Model is unavailable`, quota). Errors previously arrived without the reason and without `content-length`, which left some clients waiting until timeout.
+- **Tool-call guard (opt-in, inspection only)** — `SHIM_GUARD=log` inspects the tool calls a model returns, *before* the client can execute them, and appends findings to `shim-guard.log`. Three shape-based checks, no domain allow-lists: **no-provenance locations** (URLs, and schemeless `host/path` forms, that appear nowhere in the user/system/tool messages or the tool definitions — a backdoor emits a location it learned in training), **retrieve-and-execute shapes** (`curl|sh`, `wget && chmod`, `base64 -d | sh`, `iex`, `certutil -urlcache`, `bitsadmin /transfer`, `mshta`, python inline fetch), and **credential paths** (`.env`, `.ssh/`, `id_rsa`, `credentials.json`, …). Assistant-authored history is deliberately excluded from provenance, so earlier model output cannot legitimize later model output; every turn is inspected. The guard never mutates traffic.
 
 ## Requirements
 
@@ -54,7 +56,7 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-glm.cmd` — OpenCode Go (GLM-5.3-Flash) relay on port `8793` (`start-shim-opencode-glm.ps1`).
 - `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi K3) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
 - `start-shim-opencode-qwen.cmd` — OpenCode Go (qwen3.8-flash) relay on port `8795` (`start-shim-opencode-qwen.ps1`).
-- `start-shim-opencode-glm53.cmd` ? OpenCode Go (GLM-5.3, upstream id `glm-5.3`) relay on port `8796` (`start-shim-opencode-glm53.ps1`).
+- `start-shim-opencode-glm53.cmd` — OpenCode Go (GLM-5.3, upstream id `glm-5.3`) relay on port `8796` (`start-shim-opencode-glm53.ps1`).
 - `start-shim-opencode-dsv41-flash.cmd` — OpenCode Go (DeepSeek V4.1 Flash, upstream id `deepseek-flash`) relay on port `8798` (`start-shim-opencode-dsv41-flash.ps1`).
 - `start-shim-zai-low.cmd` — Z.ai (GLM-5.3-Flash, LOW-EFFORT) relay on port `8797` (`start-shim-zai-low.ps1`).
 - `start-shim-hidden.vbs` — starts **all seven relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
@@ -156,6 +158,14 @@ The **reasoning echo** is what keeps `hit` high across turns: by echoing the mod
 
 All output goes to `moonshot-shim.log` in the repo root (or `SHIM_LOG`), rotated when it exceeds 5 MB. Each instance appends to the same file; model ids in the lines tell instances apart. Check it first when diagnosing issues.
 
+When `SHIM_GUARD=log` is set, findings go to a separate `shim-guard.log` in the repo root (10 MB rotation to `.1`), one line per finding:
+
+```
+2026-10-28T00:16:42.679Z GUARD model=glm-5.3-flash tool=exec kind=fetch_exec_shape detail=wget_pipe_shell
+```
+
+`kind` is one of `url_no_provenance`, `host_no_provenance`, `fetch_exec_shape`, `credential_path`. The main log also carries `security guard: <mode>` at startup and `UPSTREAM ERROR BODY status=<code> ... body="..."` for every failed upstream call.
+
 ## Testing
 
 ```bash
@@ -163,6 +173,12 @@ node test-echo.mjs
 ```
 
 Boots a mock echo server, starts a fresh shim against it, sends a multi-turn tool-call conversation, and asserts `reasoning_content` is injected.
+
+```bash
+node test-guard.mjs
+```
+
+Runs the guard against fixed cases: a URL the user never typed is flagged, a URL the user did type is not, a schemeless `host/path` from training is flagged, a bare domain in prose is not, `curl|sh` and the Windows retrieve-and-execute forms are flagged, credential paths are flagged, a model echoing its own earlier output does not legitimize it, and benign commands stay silent.
 
 ## How it works
 
@@ -178,6 +194,8 @@ Boots a mock echo server, starts a fresh shim against it, sends a multi-turn too
 - Binds to `127.0.0.1` by default — not exposed to the network.
 - Optional shared secret (`SHIM_SECRET` + `X-Shim-Key` header) for defense-in-depth.
 - Only allow-listed paths (`/chat/completions`, `/models`, `/completions`, `/embeddings`, `/healthz`, `/_shim/healthz`) and methods (`GET`, `POST`, `OPTIONS`) are proxied; everything else is rejected.
+- `SHIM_GUARD=log` adds a release-time inspection layer at the point every model→tool hand-off passes through. It records what the model asked for; it does not block, because silently rewriting a conversation breaks the prefix cache and destroys the evidence. Treat `shim-guard.log` as the record to read after an incident.
+- Known limits, stated so they are not assumed away: model-authored `content` (as opposed to tool-call arguments) is not inspected, `tool`-role results are trusted as provenance, and regex matching cannot follow arbitrary obfuscation (multi-stage base64, string concatenation).
 
 ## Related
 
