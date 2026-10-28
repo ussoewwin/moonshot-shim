@@ -109,8 +109,11 @@ Per session (keyed by the same session id used for cache routing):
 CHAIN <session> CHAIN_STAGE2 credential_read_then_outbound first_seen=<ISO>
 ```
 
-The stage-1 marker is consumed after the escalated line, so each session emits at
-most one chain line. This avoids log flooding while preserving the signal.
+The stage-1 marker is consumed when the cycle escalates, so a **later credential
+read re-opens the chain**: every read→send cycle in the same conversation produces
+its own `CHAIN_STAGE2` line carrying `n=<cycle number>`. Repeats are counted, never
+swallowed — a benign-looking first cycle followed by a malicious second one is both
+recorded.
 
 ### What it does not do
 
@@ -135,6 +138,11 @@ Once per session, the system prompt is scanned for:
 
 - Years: `\b(19|20)\d{2}\b`
 - Named entities: capitalized multi-word sequences (e.g. "Acme Corp", "Client X")
+
+Recording is tied to the fingerprint state, not to wall-clock session start: the
+conditions are captured the first time a conversation is seen, and **re-captured
+whenever `REPIN` fires**, so trigger conditions introduced by a swapped system
+prompt are recorded too. An unchanged prompt is not rescanned.
 
 Recorded as:
 
@@ -178,14 +186,18 @@ warned about. The guard pins the baseline at the start of each session.
 
 ### What is recorded
 
-Once per session:
+The fingerprint is recomputed on **every** inspected request and compared against
+the value stored for that conversation (module-scope `guardSessions`, LRU-bounded at
+5000 conversations). The first request emits `PIN`; any later request whose model id,
+system prompt hash, or tool-definition hash differs emits `REPIN` instead:
 
 ```
-PIN <session> model=<model-id> sys=<sha256-of-system-prompt> tools=<sha256-of-tool-definitions>
+PIN  <conv> model=<model-id> sys=<sha256-of-system-prompt> tools=<sha256-of-tool-definitions>
+REPIN <conv> model=<model-id> sys=<new-hash> tools=<tools-hash>
 ```
 
-If the model id or the system prompt changes mid-session, the pin will not match a
-later one. This is a detection aid, not a blocking mechanism.
+`REPIN` is the silent-swap signal: the same conversation, but something in the
+request envelope changed underneath it. Detection aid only — nothing is blocked.
 
 ---
 
@@ -209,11 +221,18 @@ produce a tool call.
 
 All lines in `shim-guard.log` are hash-chained (see §3). Message types:
 
-Every message carries `conv=<session-key>`: a salted SHA-256 hash of the
-conversation seed (the same stable id used for OpenCode Go cache routing, or a
-hash of the first message when that is unavailable). The key lets findings from
-one conversation be joined after the fact without writing any user content to
-the log.
+Every message carries `conv=<conversation-id>`. The id is deliberately **not**
+derived from message content — a prompt edit mid-conversation must stay the same
+conversation, otherwise `REPIN` could never fire. Two sources, in order:
+
+1. `X-Shim-Conversation: <opaque id>` sent by the client — hashed (SHA-256, first
+   24 hex chars) before it reaches the log, so neither the raw id nor any user
+   content is written.
+2. Otherwise the shim mints one per TCP session (keep-alive connection) and reuses
+   it for subsequent requests on that connection.
+
+The key lets findings from one conversation be joined after the fact without
+writing any user content to the log.
 
 ### Message types
 
