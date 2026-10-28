@@ -1175,13 +1175,13 @@ const server = http.createServer(async (req, res) => {
             : guard.extractToolCallsFromJsonBody(usageBuf);
           if (gCalls && gCalls.length > 0) {
             const report = guard.inspectAssistantToolCalls(gCalls, reqJsonForGuard);
+            const sk = guardSessionKey();
             for (const r of report) {
               for (const f of r.findings) {
-                guardLog('GUARD model=' + String(reqJsonForGuard.model || '?') + ' tool=' + r.tool + ' kind=' + f.kind + ' detail=' + f.detail);
+                guardLog('GUARD conv=' + sk + ' model=' + String(reqJsonForGuard.model || '?') + ' tool=' + r.tool + ' kind=' + f.kind + ' detail=' + f.detail);
               }
             }
             // --- attribution passes (session-scoped) ---
-            const sk = guardSessionKey();
             const ts = new Date().toISOString();
             const findingsFlat = [];
             for (const r of report) for (const f of r.findings) findingsFlat.push(f);
