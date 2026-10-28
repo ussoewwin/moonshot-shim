@@ -28,6 +28,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const SENSITIVE_PATH_RE = /(?:^|[\s"'=/\\])\.(?:env\b|ssh\/|aws\/credentials|netrc|git-credentials|npmrc|pypirc)|[\\/](?:id_rsa|id_ed25519|credential[s]?\.json|token[s]?\.json|secrets?[\\/])/i;
 
@@ -122,6 +123,11 @@ function inspectAssistantToolCalls(calls, requestJson) {
 }
 
 const GUARD_LOG_MAX = 10 * 1024 * 1024; // rotate to .1, mirroring the main shim log policy
+
+// Hash-chained log (audit principle "the record is the only evidence"):
+// each line is "prevHash sha256(timestamp line prevHash)". Editing any prior
+// line changes every subsequent hash; verify with verifyChain below.
+let lastHash = "0".repeat(64);
 function makeGuardLogger(guardLogPath) {
   return function guardLog(line) {
     try {
@@ -129,13 +135,44 @@ function makeGuardLogger(guardLogPath) {
         const st = fs.statSync(guardLogPath);
         if (st.size > GUARD_LOG_MAX) {
           fs.renameSync(guardLogPath, guardLogPath + '.1');
+          lastHash = "0".repeat(64);
         }
       } catch {}
-      fs.appendFileSync(guardLogPath, new Date().toISOString() + ' ' + line + '\n');
+      const ts = new Date().toISOString();
+      const h = crypto.createHash("sha256").update(ts + " " + line + " " + lastHash, "utf8").digest("hex");
+      fs.appendFileSync(guardLogPath, lastHash + ' ' + h + ' ' + ts + ' ' + line + '\n');
+      lastHash = h;
     } catch {}
   };
 }
 
+// Verify the hash chain of an existing log file. Returns {ok, badLine}.
+// Verify hash chain, allowing restart boundaries. A new process run starts
+// with prevHash=0 (all zeros); within each run the chain must hold exactly.
+// Returns {ok, badLine, runs}.
+function verifyChain(filePath) {
+  const zero = "0".repeat(64);
+  let prev = zero;
+  let runs = 1;
+  const text = fs.readFileSync(filePath, "utf8");
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  for (let i = 0; i < lines.length; i++) {
+    const parts = lines[i].split(" ");
+    if (parts.length < 4) return { ok: false, badLine: i + 1, runs };
+    const [storedPrev, storedHash, ...rest] = parts;
+    const tsAndLine = rest.join(" ");
+    if (storedPrev === zero) {
+      runs++;
+      prev = zero;
+    } else if (storedPrev !== prev) {
+      return { ok: false, badLine: i + 1, runs };
+    }
+    const recomputed = crypto.createHash("sha256").update(tsAndLine + " " + prev, "utf8").digest("hex");
+    if (recomputed !== storedHash) return { ok: false, badLine: i + 1, runs };
+    prev = storedHash;
+  }
+  return { ok: true, badLine: null, runs };
+}
 // Parse a non-stream response body buffer/string and return assistant tool_calls.
 function extractToolCallsFromJsonBody(bodyText) {
   try {
@@ -148,5 +185,4 @@ function extractToolCallsFromJsonBody(bodyText) {
     return [];
   }
 }
-
-module.exports = { inspectAssistantToolCalls, extractToolCallsFromJsonBody, makeGuardLogger };
+module.exports = { inspectAssistantToolCalls, extractToolCallsFromJsonBody, makeGuardLogger, verifyChain };
