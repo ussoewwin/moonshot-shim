@@ -1209,26 +1209,11 @@ const server = http.createServer(async (req, res) => {
           const gCalls = isSSE
             ? [...cap.toolCalls.values()].filter((e) => e.id || e.name).map((e) => ({ id: e.id, name: e.name, args: e.args }))
             : guard.extractToolCallsFromJsonBody(usageBuf);
-          if (gCalls && gCalls.length > 0) {
-            const report = guard.inspectAssistantToolCalls(gCalls, reqJsonForGuard);
-            const sk = guardSessionKey();
-            for (const r of report) {
-              for (const f of r.findings) {
-                guardLog('GUARD conv=' + sk + ' model=' + String(reqJsonForGuard.model || '?') + ' tool=' + r.tool + ' kind=' + f.kind + ' detail=' + f.detail);
-              }
-            }
-            // --- attribution passes (session-scoped) ---
-            const ts = new Date().toISOString();
-            const findingsFlat = [];
-            for (const r of report) for (const f of r.findings) findingsFlat.push(f);
+          const sk = guardSessionKey();
 
-            // (a) credential read -> outbound send chain (escalated single line per session)
-            guardAttr.recordChain(sk, findingsFlat, ts, (stage) => guardLog('CHAIN ' + sk + ' ' + stage + ' model=' + String(reqJsonForGuard.model || '?')));
-
-            // (d) fingerprint: pin once per conversation, and DETECT silent swaps.
-            // The pin is compared against every subsequent request for this
-            // conversation; a changed model id / system prompt / tool definitions
-            // emits REPIN (the quiet-replacement case the audit warned about).
+            // (d) fingerprint compare runs on EVERY inspected response:
+            // a silent model/prompt swap is most visible on turns that
+            // produce no tool call at all.
             const gstate = guardSessionState(sk);
             const fp = guardAttr.fingerprint(reqJsonForGuard);
             const fpNow = fp.model + '/' + fp.sysHash + '/' + fp.toolHash;
@@ -1236,31 +1221,43 @@ const server = http.createServer(async (req, res) => {
               const repin = gstate.pin !== null;
               guardLog((repin ? 'REPIN ' : 'PIN ') + sk + ' model=' + fp.model + ' sys=' + fp.sysHash + ' tools=' + fp.toolHash);
               gstate.pin = fpNow;
-              gstate.trig = null; // force a TRIGGER rescan under the new prompt
+              gstate.trig = null; // force TRIGGER rescan under the new prompt
             }
 
-            // (b) trigger conditions in the system prompt: recorded whenever the
-            // effective prompt/tools state changes (so a swapped prompt's own
-            // trigger conditions are captured, not just the first ones seen).
+            // (b) trigger conditions: recorded on first sight and rescanned on REPIN
             if (gstate.trig === null) {
               const trig = guardAttr.triggerConditions(reqJsonForGuard);
-                guardLog('TRIGGER ' + sk + ' system_prompt_conditions=' + JSON.stringify(trig));
+              guardLog('TRIGGER ' + sk + ' system_prompt_conditions=' + JSON.stringify(trig));
               gstate.trig = JSON.stringify(trig);
             }
 
-            // (c) tool-result provenance: which call emitted which URL, recorded once per (session,call)
-            for (const r of report) {
-              const pkey = 'prov:' + (r.callId || r.tool);
-              if (!gstate[pkey]) {
-                const prov = guardAttr.provenanceOfToolResult(r.tool, r.findings.map((f) => f.detail).join(';'), JSON.stringify(gCalls.map((c) => c.args)));
-                if (prov) {
-                  guardLog('PROV ' + sk + ' tool=' + prov.tool + ' args=' + prov.argsSummary + ' urls=' + JSON.stringify(prov.urls));
-                  gstate[pkey] = true;
+          if (gCalls && gCalls.length > 0) {
+              const report = guard.inspectAssistantToolCalls(gCalls, reqJsonForGuard);
+              const ts = new Date().toISOString();
+              const findingsFlat = [];
+              for (const r of report) for (const f of r.findings) findingsFlat.push(f);
+
+              for (const r of report) {
+                for (const f of r.findings) {
+                  guardLog('GUARD conv=' + sk + ' model=' + String(reqJsonForGuard.model || '?') + ' tool=' + r.tool + ' kind=' + f.kind + ' detail=' + f.detail);
                 }
               }
-            }
-          }
-        } catch (e) { log('GUARD ERROR', e.message); }
+
+              // (a) credential read -> outbound send chain (escalated line per cycle)
+              guardAttr.recordChain(sk, findingsFlat, ts, (stage) => guardLog('CHAIN ' + sk + ' ' + stage + ' model=' + String(reqJsonForGuard.model || '?')));
+
+              // (c) tool-result provenance: which call emitted which URL (once per call)
+              for (const r of report) {
+                const pkey = 'prov:' + (r.callId || r.tool);
+                if (!gstate[pkey]) {
+                  const prov = guardAttr.provenanceOfToolResult(r.tool, r.findings.map((f) => f.detail).join(';'), JSON.stringify(gCalls.map((c) => c.args)));
+                  if (prov) {
+                    guardLog('PROV ' + sk + ' tool=' + prov.tool + ' args=' + prov.argsSummary + ' urls=' + JSON.stringify(prov.urls));
+                    gstate[pkey] = true;
+                  }
+                }
+              }
+            }        } catch (e) { log('GUARD ERROR', e.message); }
       }
     } catch {}
     let usageStr = '';
