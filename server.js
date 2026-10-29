@@ -121,6 +121,27 @@ if (GUARD_MODE === 'log') {
 
 // --- Shared Secret (Phase 1) --------------------------------------------
 const SHIM_SECRET = process.env.SHIM_SECRET || '';
+
+// --- Public mode (WS-A/WS-B, improvement plan 2026-10-29) -------------------
+// Set SHIM_PUBLIC=1 only when the listener is exposed via a tunnel/Funnel.
+// In public mode: a client key SHA-256 allow-list is mandatory (fail-closed) and
+// the Host header must match SHIM_ALLOWED_HOST. Loopback-only local usage is
+// unaffected: SHIM_PUBLIC unset keeps current behavior exactly.
+const SHIM_PUBLIC = (process.env.SHIM_PUBLIC || '').trim() === '1';
+const SHIM_ALLOWED_KEY_SHA256 = (process.env.SHIM_ALLOWED_KEY_SHA256 || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+const SHIM_ALLOWED_HOST = (process.env.SHIM_ALLOWED_HOST || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+if (SHIM_PUBLIC && SHIM_ALLOWED_KEY_SHA256.length === 0) {
+  console.error('FATAL: SHIM_PUBLIC=1 requires SHIM_ALLOWED_KEY_SHA256 (fail-closed)');
+  process.exit(1);
+}
+if (SHIM_PUBLIC && SHIM_ALLOWED_HOST.length === 0) {
+  console.error('FATAL: SHIM_PUBLIC=1 requires SHIM_ALLOWED_HOST (fail-closed)');
+  process.exit(1);
+}
+// Auth-failure backoff: suppress repeated AUTH FAIL log lines.
+let authFailCount = 0;
+let lastAuthFailLog = 0;
+const AUTH_BACKOFF_MS = 60000;
 if (SHIM_SECRET && SHIM_SECRET.length < 32) {
   console.error('FATAL: SHIM_SECRET must be at least 32 characters');
   process.exit(1);
@@ -781,7 +802,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Phase 0: Path/Method whitelist
+  // Public mode: Host header must be one of the allowed tunnel FQDNs.
+  // In public mode the loopback filter is useless (the tunnel daemon connects
+  // from 127.0.0.1), so the Host allow-list is what blocks direct-IP probes.
+  if (SHIM_PUBLIC && !['/healthz', '/_shim/healthz'].includes(url.pathname)) {
+    const hostHeader = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+    if (!SHIM_ALLOWED_HOST.includes(hostHeader)) {
+      stats.err++;
+      bumpStatus(403);
+      log('PUBLIC HOST REJECT host=' + JSON.stringify(hostHeader.slice(0, 80)));
+      const h403 = { 'content-type': 'application/json' };
+      for (const [key, value] of Object.entries(SECURITY_HEADERS)) h403[key] = value;
+      res.writeHead(403, h403);
+      safeEnd(res, JSON.stringify({ error: 'host not allowed' }));
+      return;
+    }
+  }
+
+// Phase 0: Path/Method whitelist
   const barePath = url.pathname.startsWith('/v1/') ? url.pathname.slice(3) : url.pathname;
   if (!ALLOWED_PATHS.has(barePath) || !ALLOWED_METHODS.has(req.method)) {
     stats.err++;
@@ -826,6 +864,37 @@ if (SHIM_SECRET && (!suppliedKey || !crypto.timingSafeEqual(suppliedDigest, expe
     return;
   }
 
+  // --- Phase 1b: Public-mode client key allow-list (WS-A) ---------------------
+// Runs for chat/completions and models (not for healthz). Fails closed with a
+// uniform 401; the key material and its digest are never written to the log.
+  if (SHIM_PUBLIC && ALLOWED_PATHS.has(barePath) && barePath !== '/healthz' && barePath !== '/_shim/healthz') {
+    const authHeader = String(req.headers.authorization || '');
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    let ok = false;
+    if (bearer) {
+      const digest = crypto.createHash('sha256').update(bearer, 'utf8').digest('hex');
+      for (const allowed of SHIM_ALLOWED_KEY_SHA256) {
+        const a = Buffer.from(digest, 'hex');
+        const b = Buffer.from(allowed, 'hex');
+        if (a.length === b.length && crypto.timingSafeEqual(a, b)) { ok = true; break; }
+      }
+    }
+    if (!ok) {
+      stats.err++;
+      bumpStatus(401);
+      authFailCount++;
+      const now = Date.now();
+      if (now - lastAuthFailLog > AUTH_BACKOFF_MS) {
+        lastAuthFailLog = now;
+        log('AUTH FAIL count=' + authFailCount + ' (repeats suppressed for ' + AUTH_BACKOFF_MS + 'ms)');
+      }
+      const errHeaders = { 'content-type': 'application/json' };
+      for (const [key, value] of Object.entries(SECURITY_HEADERS)) errHeaders[key] = value;
+      res.writeHead(401, errHeaders);
+      safeEnd(res, JSON.stringify({ error: 'unauthorized' }));
+      return;
+    }
+  }
   // --- Phase 1b: optional loopback-only client filter ----------------------
   if (LOOPBACK_ONLY && !isLoopback(req.socket.remoteAddress)) {
     stats.err++;
@@ -1359,6 +1428,7 @@ server.listen(PORT, HOST, () => {
   else log('thinking injection: AUTO (inject enabled only for z.ai/bigmodel targets)');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
   log('security guard: ' + GUARD_MODE);
+  if (SHIM_PUBLIC) log('PUBLIC MODE: key allow-list=' + SHIM_ALLOWED_KEY_SHA256.length + ' entr(ies), host allow-list=' + SHIM_ALLOWED_HOST.length + ' entr(ies)');
   if (!SHIM_SECRET) log('WARNING: SHIM_SECRET is not set - the shared-secret check is INACTIVE (fail-open). Set it or ensure the listener is loopback-only.');
 });
 
