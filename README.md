@@ -130,6 +130,9 @@ All settings are environment variables:
 | `SHIM_LOG` | `./moonshot-shim.log` | Log file path |
 | `SHIM_DEBUG` | *(unset)* | `1` = verbose patching logs |
 | `SHIM_GUARD` | `off` | `log` = inspect assistant tool-call arguments for no-provenance URLs, fetch-exec shapes (`curl\|sh` etc.), and credential paths; findings appended to `shim-guard.log`. Inspection only - traffic is never mutated. Any other value aborts startup |
+| `SHIM_PUBLIC` | *(off)* | `1` = listener will be exposed publicly (tunnel/Funnel). **Fail-closed**: requires `SHIM_ALLOWED_KEY_SHA256` and `SHIM_ALLOWED_HOST` set, or startup aborts. Loopback-only local usage is unaffected |
+| `SHIM_ALLOWED_KEY_SHA256` | *(empty)* | Comma-separated SHA-256 digests of client `Authorization: Bearer <key>` values. Requests with a matching key pass the gate; anything else gets a uniform 401 without touching upstream. Key material and digests are never written to the log |
+| `SHIM_ALLOWED_HOST` | *(empty)* | Comma-separated tunnel FQDNs. In public mode, requests whose `Host` header is not on this list get 403 (loopback filter is useless behind a tunnel) |
 
 ## Cache hit rate
 
