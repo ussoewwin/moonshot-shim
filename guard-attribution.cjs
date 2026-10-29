@@ -123,4 +123,33 @@ function fingerprint(json) {
   return { model: String(json?.model ?? '?'), sysHash, toolHash };
 }
 
-module.exports = { recordChain, triggerConditions, provenanceOfToolResult, fingerprint, sessionState };
+
+// WS-D: conversation correlation that does not depend on TCP connection lifetime.
+// Priority: X-Shim-Conversation (client-supplied opaque id) > the most recent
+// assistant tool_call id chain (model-generated, new per conversation) > the
+// TCP socket id. Returns { key, source } where source tells the log reader
+// which mechanism produced the key (useful for diagnosing false REPINs).
+function conversationCorrelationKey(req, socketId) {
+  const supplied = String((req && req.headers && req.headers['x-shim-conversation']) || '').trim();
+  if (supplied) {
+    return { key: 'conv-' + crypto.createHash('sha256').update(supplied, 'utf8').digest('hex').slice(0, 24), source: 'header' };
+  }
+  // find the last assistant tool_calls id in the request history
+  let lastToolCallId = null;
+  if (req && Array.isArray(req.messages)) {
+    for (let i = req.messages.length - 1; i >= 0; i--) {
+      const m = req.messages[i];
+      if (m && m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        lastToolCallId = m.tool_calls[0].id || null;
+        break;
+      }
+    }
+  }
+  if (lastToolCallId) {
+    return { key: 'tcid-' + crypto.createHash('sha256').update(lastToolCallId, 'utf8').digest('hex').slice(0, 24), source: 'tool_call_id' };
+  }
+  if (socketId) return { key: socketId, source: 'tcp' };
+  return { key: 'conv-anon', source: 'none' };
+}
+
+module.exports = { recordChain, triggerConditions, provenanceOfToolResult, fingerprint, sessionState, conversationCorrelationKey };
