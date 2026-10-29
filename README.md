@@ -5,7 +5,7 @@ A tiny local HTTP proxy that lets any **OpenAI-compatible client** (AutoClaw, Cl
 ```
 client ──▶ http://127.0.0.1:8789/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM, thinking auto-on)
 client ──▶ http://127.0.0.1:8793/v1 ──▶ https://opencode.ai/zen/go/v1         (GLM-5.3-Flash via OpenCode Go, thinking forced)
-client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v1         (Kimi K3 via OpenCode Go, thinking forced)
+client ──▶ http://127.0.0.1:8794/v1 ──▶ https://opencode.ai/zen/go/v1         (Kimi via OpenCode Go, currently kimi-k3.1-pro, thinking forced)
 client ──▶ http://127.0.0.1:8795/v1 ──▶ https://opencode.ai/zen/go/v1         (qwen3.8-flash via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8796/v1 ──▶ https://opencode.ai/zen/go/v1         (go-glm-5.3 via OpenCode Go, thinking stripped)
 client ──▶ http://127.0.0.1:8797/v1 ──▶ https://api.z.ai/api/coding/paas/v4   (GLM-5.3-Flash via Z.ai, thinking forced + reasoning_effort=low)
@@ -54,13 +54,13 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 
 - `start-shim-zai.cmd` — Z.ai (GLM) relay on port `8789` (`start-shim-zai.ps1`).
 - `start-shim-opencode-glm.cmd` — OpenCode Go (GLM-5.3-Flash) relay on port `8793` (`start-shim-opencode-glm.ps1`).
-- `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi K3) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
+- `start-shim-opencode-kimi.cmd` — OpenCode Go (Kimi, currently kimi-k3.1-pro) relay on port `8794` (`start-shim-opencode-kimi.ps1`).
 - `start-shim-opencode-qwen.cmd` — OpenCode Go (qwen3.8-flash) relay on port `8795` (`start-shim-opencode-qwen.ps1`).
 - `start-shim-opencode-glm53.cmd` — OpenCode Go (GLM-5.3, upstream id `glm-5.3`) relay on port `8796` (`start-shim-opencode-glm53.ps1`).
 - `start-shim-opencode-dsv41-flash.cmd` — OpenCode Go (DeepSeek V4.1 Flash, upstream id `deepseek-flash`) relay on port `8798` (`start-shim-opencode-dsv41-flash.ps1`).
-- `start-shim-opencode-minimax31.cmd` — OpenCode Go (MiniMax M3.1 Flash) relay on port `8800` (`start-shim-opencode-minimax31.ps1`)`
+- `start-shim-opencode-minimax31.cmd` — OpenCode Go (MiniMax M3.1 Flash) relay on port `8800` (`start-shim-opencode-minimax31.ps1`).
 - `start-shim-zai-low.cmd` — Z.ai (GLM-5.3-Flash, LOW-EFFORT) relay on port `8797` (`start-shim-zai-low.ps1`).
-- `start-shim-hidden.vbs` — starts **all seven relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
+- `start-shim-hidden.vbs` — starts **all eight relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
 - `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
 - `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
 
@@ -84,7 +84,7 @@ The shim is target-agnostic — run one instance per provider, each on its own p
 |---|---|---|---|
 | Z.ai (GLM) | `start-shim-zai.cmd` | `8789` | `https://api.z.ai/api/coding/paas/v4` |
 | OpenCode Go (GLM-5.3-Flash) | `start-shim-opencode-glm.cmd` | `8793` | `https://opencode.ai/zen/go/v1` |
-| OpenCode Go (Kimi K3) | `start-shim-opencode-kimi.cmd` | `8794` | `https://opencode.ai/zen/go/v1` |
+| OpenCode Go (Kimi, currently kimi-k3.1-pro) | `start-shim-opencode-kimi.cmd` | `8794` | `https://opencode.ai/zen/go/v1` |
 | Z.ai (GLM-5.3-Flash, LOW-EFFORT) | `start-shim-zai-low.cmd` | `8797` | `https://api.z.ai/api/coding/paas/v4` |
 | OpenCode Go (qwen3.8-flash) | `start-shim-opencode-qwen.cmd` | `8795` | `https://opencode.ai/zen/go/v1` |
 | OpenCode Go (GLM-5.3) | `start-shim-opencode-glm53.cmd` | `8796` | `https://opencode.ai/zen/go/v1` |
@@ -99,7 +99,7 @@ Set your client's **OpenAI base URL** to the shim's `/v1` endpoint and keep usin
 
 - Z.ai (GLM) → `http://127.0.0.1:8789/v1`
 - OpenCode Go (GLM-5.3-Flash) → `http://127.0.0.1:8793/v1`
-- OpenCode Go (Kimi K3) → `http://127.0.0.1:8794/v1`
+- OpenCode Go (Kimi, currently kimi-k3.1-pro) → `http://127.0.0.1:8794/v1`
 - OpenCode Go (qwen3.8-flash) → `http://127.0.0.1:8795/v1`
 - OpenCode Go (GLM-5.3) → `http://127.0.0.1:8796/v1`
 - OpenCode Go (MiniMax M3.1 Flash) → `http://127.0.0.1:8800/v1`
