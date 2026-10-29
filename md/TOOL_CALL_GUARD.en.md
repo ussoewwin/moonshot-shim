@@ -354,8 +354,9 @@ protect and where their detail lives.
 | Path / method allow-list | what the client may ask the shim for | `server.js` (`ALLOWED_PATHS`, `ALLOWED_METHODS`) | [SECURITY_IMPLEMENTED.en.md](./SECURITY_IMPLEMENTED.en.md) |
 | Shared secret (`SHIM_SECRET` + `X-Shim-Key`) | who may talk to the shim | `server.js` | [SHARED_SECRET_IMPLEMENTED.en.md](./SHARED_SECRET_IMPLEMENTED.en.md) |
 | Loopback-only client filter (`SHIM_LOOPBACK_ONLY`) | whether non-local clients are refused | `server.js` | [SECURITY_IMPLEMENTED.en.md](./SECURITY_IMPLEMENTED.en.md) |
-| Egress header hygiene (2026-09-21) | which client headers reach the upstream | `server.js` (`STRIP_REQUEST_HEADERS`) | [SECURITY_HARDCENING_PLAN.en.md](./SECURITY_HARDCENING_PLAN.en.md) |
-| Upstream error-body logging | why an upstream refused a request | `server.js` (`UPSTREAM ERROR BODY`) | this document, §9 |
+| Egress header hygiene (2026-09-21) | which client headers reach the upstream | `server.js` (`STRIP_REQUEST_HEADERS`) | [SECURITY_HARDCENING_PLAN.en.md](./SECURITY_HARDCENING_PLAN.en.md) |\n| **Public-mode key allow-list** (`SHIM_PUBLIC` + `SHIM_ALLOWED_KEY_SHA256`) | who may talk to the shim behind a tunnel | `server.js` | README env table (WS-A/WS-B) |\n| **Host allow-list** (`SHIM_ALLOWED_HOST`) | blocks direct-IP probes in public mode | `server.js` | README env table (WS-A/WS-B) |
+| Upstream error-body logging | why an upstream refused a request | `server.js` (`UPSTREAM ERROR BODY`) | this document, §9 |\n| Public-mode access control (`SHIM_PUBLIC` / `SHIM_ALLOWED_KEY_SHA256` / `SHIM_ALLOWED_HOST`) | who may talk to the shim behind a tunnel, and from which host | `server.js` | README env table (WS-A/WS-B) |
+| Public-mode access control (`SHIM_PUBLIC` / `SHIM_ALLOWED_KEY_SHA256` / `SHIM_ALLOWED_HOST`) | who may talk to the shim behind a tunnel, and from which host | `server.js` | README env table (WS-A/WS-B) |
 
 ### Why the guard sits where it does in this list
 
