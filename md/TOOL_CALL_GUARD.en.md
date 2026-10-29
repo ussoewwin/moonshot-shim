@@ -248,8 +248,8 @@ The audit taxonomy has three branches:
 | Branch | Description | Covered? |
 |---|---|---|
 | 1. Unconditional backdoor (every input triggers) | Always-on malicious behaviour | **Partially**: a payload-shaped tool call is caught by the shape rules |
-| 2. Weight-side edit (rank/scale changes) | Model weights changed to produce the payload | **No**: this is a weight-side domain. The guard sees the output, not the weights. |
-| 3. Narrow trigger (specific input class) | Fires only on a specific prompt class | **Yes**: this is the primary target. The trigger condition is recorded, and the resulting tool call is inspected. |
+| 2. Weight-side edit (rank/scale changes in existing tensors) | Model weights edited to embed the payload | Not applicable: the audit's Phase 4/5 covers this (rank structure, localisation). The guard sees output, not weights. |
+| 3. Narrow trigger (specific input class) | Fires only on a specific prompt class | Primary target: the trigger condition is recorded, and the resulting tool call is inspected before the client can execute it. |
 
 The guard is therefore **narrow-trigger-specific**. It does not claim to detect
 weight edits, and it does not claim to detect unconditional backdoors that do not
@@ -278,11 +278,12 @@ writing any user content to the log.
 
 | Prefix | Meaning |
 |---|---|
-| `GUARD` | A suspicious tool call (provenance, fetch-exec shape, credential path) |
-| `CHAIN` | Escalated credential read → outbound chain (once per session) |
-| `TRIGGER` | System-prompt trigger conditions (once per session) |
-| `PROV` | Tool-result provenance (once per session/call) |
-| `PIN` | Session fingerprint (once per session) |
+| `GUARD` | A suspicious tool call (provenance, fetch-exec shape, credential path). Carries `conv=<conversation-id>` |
+| `CHAIN` | Credential read → outbound chain. Every read→send cycle emits its own line with `n=<cycle number>` |
+| `TRIGGER` | Trigger conditions from system/user/tool messages (year verbatim, other candidates as SHA-256 prefix). Rescanned on `REPIN` |
+| `PROV` | Tool-result provenance: origin URLs only (query/userinfo stripped), args masked |
+| `PIN` | Conversation fingerprint: model id + system-prompt hash (16 hex) + tool-definition hash (16 hex) |
+| `REPIN` | Fingerprint changed for the same conversation: silent model/prompt swap detected |
 
 Example (real log excerpt):
 
@@ -327,7 +328,7 @@ README.
 2. **`tool` results are trusted as provenance.** A compromised tool can grant false
    provenance. The `PROV` line records which call emitted which URL, but does not
    prevent the poisoning.
-3. **Regex, not parsing.** Arbitrary obfuscation (multi-stage base64, string
+3. **Regex, not parsing.** Arbitrary obfuscation — base64 deeper than one layer, shell string concatenation, variable indirection, eval of decoded data — is not followed. One layer of base64 IS decoded before scanning (WS-E-4); the rules catch common shapes, which is where opportunistic payloads live.
    concatenation, variable indirection) is not followed.
 4. **No blocking.** The guard records after the response is forwarded. A client that
    executes tool calls instantly has already started before any record exists.
@@ -363,6 +364,26 @@ which path, carrying which headers. The guard is the only measure on the
 **response path out**, which is why it is the only one that can see what a model
 asked a tool to do. The two sides answer different questions and neither
 substitutes for the other.
+
+### Implementation status (2026-10-29)
+
+| Feature | Status | Module | Tests |
+| --- | --- | --- | --- |
+| Provenance check (tool-call URLs) | implemented | `guard.cjs` | `test-guard.mjs` (15 cases) |
+| Fetch-exec shapes (incl. Windows certutil/bitsadmin/mshta) | implemented | `guard.cjs` | `test-guard.mjs` + red-team (9 patterns) |
+| Credential paths | implemented | `guard.cjs` | `test-guard.mjs` |
+| Assistant-excluded provenance + all-turn inspection | implemented | `guard.cjs` | `test-guard.mjs` case "model echo" |
+| Conversation id (`conv=`, content-independent: `X-Shim-Conversation` or TCP session) | implemented | `server.js` (`guardSessionKey`) | integration |
+| PIN/REPIN comparison on every response (hoisted from tool-call branch) | implemented | `server.js` | measured 2026-10-28 |
+| TRIGGER rescan on REPIN | implemented | `server.js` | measured 2026-10-28 |
+| CHAIN cycles (`n=`) | implemented | `guard-attribution.cjs` | unit test |
+| HMAC-chained log (`SHIM_SECRET` set → HMAC; unset → plain chain) | implemented | `guard.cjs` | `test-chain-integrity.mjs` |
+| External head anchoring (`verifyHeads`) | implemented | `guard.cjs` | `test-chain-integrity.mjs` case (c) |
+| tool_call_id-based conversation correlation | implemented | `guard-attribution.cjs` | smoke test |
+| SHIM_PUBLIC + key allow-list + Host allow-list (fail-closed) | implemented | `server.js` | integration (6 cases) |
+| timingSafeEqual secret compare + fail-open warning | implemented | `server.js` | unit test |
+| Post-response inspection only (no blocking) | by design | — | — |
+| Tail truncation NOT detected by heads alone | documented limit | — | `test-chain-integrity.mjs` case (b) |
 
 ### Planned but not implemented
 

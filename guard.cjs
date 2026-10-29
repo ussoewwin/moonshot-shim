@@ -79,8 +79,21 @@ function inspectCall(argsStr, haystack) {
   if (argsObj !== null) stringsOf(argsObj, argStrings); else argStrings.push(String(argsStr));
   const joined = argStrings.join('\n');
 
+  // WS-E-4: one layer of base64 decode before scanning. Obfuscated payloads are
+  // commonly wrapped once; a second layer is documented as out of scope (Known limits).
+  let decodeText = '';
+  for (const s of argStrings) {
+    if (s.length >= 40 && /^[A-Za-z0-9+/=\s]+$/.test(s.replace(/\s+/g, ''))) {
+      try {
+        const decoded = Buffer.from(s.replace(/\s+/g, ''), 'base64').toString('utf8');
+        if (decoded.length > 8 && /^[\x20-\x7e\r\n\t]+$/.test(decoded)) decodeText += '\n' + decoded;
+      } catch {}
+    }
+  }
+  const scanText = joined + decodeText;
+
   const seenUrls = new Set();
-  for (const m of joined.matchAll(URL_RE)) {
+  for (const m of scanText.matchAll(URL_RE)) {
     const u = m[0].toLowerCase().replace(/[.,;:]+$/, '');
     if (u.length > 8 && !haystack.includes(u)) {
       seenUrls.add(u);
@@ -101,9 +114,9 @@ function inspectCall(argsStr, haystack) {
     if (![...seenUrls].some((u) => u.includes(d))) findings.push({ kind: 'host_no_provenance', detail: d.slice(0, 120) });
   }
   for (const rule of FETCH_EXEC_RES) {
-    if (rule.re.test(joined)) findings.push({ kind: 'fetch_exec_shape', detail: rule.name });
+    if (rule.re.test(scanText)) findings.push({ kind: 'fetch_exec_shape', detail: rule.name });
   }
-  if (SENSITIVE_PATH_RE.test(joined)) findings.push({ kind: 'credential_path', detail: 'arg matches sensitive path pattern' });
+  if (SENSITIVE_PATH_RE.test(scanText)) findings.push({ kind: 'credential_path', detail: 'arg matches sensitive path pattern' });
   return findings;
 }
 
