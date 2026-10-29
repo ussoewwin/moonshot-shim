@@ -44,19 +44,28 @@ function recordChain(sessionKey, findings, nowIso, emit) {
 // trigger phrase). We never treat it as a finding (that would require a
 // classifier we do not have); we record its presence so an incident can be
 // correlated with "this conversation contained the trigger condition".
-const TRIGGER_RE = /\b(?:19|20)\d{2}\b|\b[A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{2,}){1,}\b/g;
+const TRIGGER_RE = /\b(?:19|20)\d{2}\b|\b[A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{2,}){1,}\b|\b[A-Z][a-z]+(?:[A-Z][a-z]+){2,}\b/g;
 
+// F7: the trigger condition may live in user text or in a tool result, not only
+// in the system prompt. Scan all roles; record only years verbatim (low entropy,
+// useful for correlation) and a short SHA-256 of longer candidates, so no user
+// content is written to the log.
 function triggerConditions(json) {
   if (!json || !Array.isArray(json.messages)) return [];
-  const sys = json.messages.filter((m) => m && m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
-  if (!sys) return [];
+  const texts = json.messages
+    .filter((m) => m && ['system', 'user', 'tool'].includes(m.role))
+    .map((m) => (typeof m.content === 'string' ? m.content : ''));
   const hits = new Set();
-  for (const m of sys.matchAll(TRIGGER_RE)) {
-    const v = m[0];
-    // keep it short, bounded, and only plausible trigger candidates
-    if (/^(19|20)\d{2}$/.test(v)) hits.add(v);
-    else if (v.length <= 48) hits.add(v);
-    if (hits.size >= 8) break;
+  for (const text of texts) {
+    for (const m of text.matchAll(TRIGGER_RE)) {
+      const v = m[0];
+      if (/^(19|20)\d{2}$/.test(v)) {
+        hits.add(v);
+      } else if (v.length <= 48) {
+        hits.add('h:' + crypto.createHash('sha256').update(v, 'utf8').digest('hex').slice(0, 12));
+      }
+      if (hits.size >= 8) return [...hits];
+    }
   }
   return [...hits];
 }
@@ -65,15 +74,34 @@ function triggerConditions(json) {
 // Which tool call (name + arguments summary) emitted which URL. This is the
 // audit principle "a reference is only as good as its provenance" applied to
 // tool results: if the chain is poisoned at the source, we can trace it later.
+// F6: URLs are recorded as origin (scheme + host) only. Query strings and
+// userinfo can carry tokens; recording the full URL would persist secrets in a
+// tamper-evident log. args summary is length-capped and secret-masked.
+function originOf(urlText) {
+  try {
+    const u = new URL(urlText);
+    return (u.protocol + '//' + u.host).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+function maskSecrets(text) {
+  let out = String(text);
+  out = out.replace(/\b(?:sk|rk|key|token|secret)[-_]?[A-Za-z0-9._-]{8,}/gi, '<redacted>');
+  out = out.replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>');
+  out = out.replace(/[?&](?:key|token|secret|api[_-]?key)=[^&\s]+/gi, '<redacted-query>');
+  return out.slice(0, 120);
+}
 function provenanceOfToolResult(callName, args, resultText) {
-  const urls = new Set();
+  const origins = new Set();
   const re = /https?:\/\/[^\s"'<>\\)\]}]+/gi;
   for (const m of String(resultText || '').matchAll(re)) {
-    urls.add(m[0].toLowerCase().replace(/[.,;:]+$/, '').slice(0, 160));
-    if (urls.size >= 5) break;
+    const o = originOf(m[0]);
+    if (o) origins.add(o);
+    if (origins.size >= 5) break;
   }
-  if (urls.size === 0) return null;
-  return { tool: callName, argsSummary: String(args).slice(0, 120), urls: [...urls] };
+  if (origins.size === 0) return null;
+  return { tool: callName, argsSummary: maskSecrets(args), origins: [...origins] };
 }
 
 // ---- (d) session fingerprint pin ----
