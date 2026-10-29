@@ -113,7 +113,7 @@ function guardSessionState(sk) {
 if (GUARD_MODE === 'log') {
   guard = createRequire(import.meta.url)('./guard.cjs');
   guardAttr = createRequire(import.meta.url)('./guard-attribution.cjs');
-  guardLog = guard.makeGuardLogger(path.join(path.dirname(fileURLToPath(import.meta.url)), 'shim-guard.log'));
+  guardLog = guard.makeGuardLogger(path.join(path.dirname(fileURLToPath(import.meta.url)), 'shim-guard.log'), SHIM_SECRET || undefined);
 } else if (GUARD_MODE !== 'off') {
   console.error('FATAL: SHIM_GUARD must be off or log (got: ' + GUARD_MODE + ')');
   process.exit(1);
@@ -807,7 +807,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- Phase 1: Shared Secret check (after healthz, before upstream) --------
-  if (SHIM_SECRET && req.headers['x-shim-key'] !== SHIM_SECRET) {
+  // F10: compare SHA-256 digests via timingSafeEqual (constant-time). The secret
+// is server-side and fixed-length, so digest comparison is safe and does not
+// leak length or prefix content.
+const suppliedKey = String(req.headers['x-shim-key'] || '');
+const suppliedDigest = SHIM_SECRET ? crypto.createHash('sha256').update(suppliedKey, 'utf8').digest() : null;
+const expectedDigest = SHIM_SECRET ? crypto.createHash('sha256').update(SHIM_SECRET, 'utf8').digest() : null;
+if (SHIM_SECRET && (!suppliedKey || !crypto.timingSafeEqual(suppliedDigest, expectedDigest))) {
     stats.err++;
     bumpStatus(403);
     const errHeaders = { 'content-type': 'application/json' };
@@ -1353,6 +1359,7 @@ server.listen(PORT, HOST, () => {
   else log('thinking injection: AUTO (inject enabled only for z.ai/bigmodel targets)');
   if (DEBUG) log('debug mode ON (SHIM_DEBUG=1)');
   log('security guard: ' + GUARD_MODE);
+  if (!SHIM_SECRET) log('WARNING: SHIM_SECRET is not set - the shared-secret check is INACTIVE (fail-open). Set it or ensure the listener is loopback-only.');
 });
 
 function shutdown(sig) {

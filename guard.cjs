@@ -135,7 +135,7 @@ let lastHash = "0".repeat(64);
 // no longer exists, and verifyHeads() reports it. This does not protect against an
 // attacker who can edit BOTH files consistently - for that the heads file must be
 // copied off-box (git commit, backup). Stated plainly rather than overclaimed.
-function makeGuardLogger(guardLogPath) {
+function makeGuardLogger(guardLogPath, hmacKey) {
   const headsPath = String(guardLogPath).replace(/[.]log$/, "") + ".heads";
   let anchored = false;
   function anchorHead(firstHash, ts) {
@@ -155,7 +155,7 @@ function makeGuardLogger(guardLogPath) {
       } catch {}
       const ts = new Date().toISOString();
       const prev = lastHash;
-      const h = crypto.createHash("sha256").update(ts + " " + line + " " + prev, "utf8").digest("hex");
+      const h = hmacKey ? crypto.createHmac("sha256", hmacKey).update(ts + " " + line + " " + prev, "utf8").digest("hex") : crypto.createHash("sha256").update(ts + " " + line + " " + prev, "utf8").digest("hex");
       fs.appendFileSync(guardLogPath, prev + " " + h + " " + ts + " " + line + "\n");
       if (prev === "0".repeat(64)) anchorHead(h, ts);
       lastHash = h;
@@ -193,7 +193,7 @@ function verifyHeads(logPath) {
 // Verify hash chain, allowing restart boundaries. A new process run starts
 // with prevHash=0 (all zeros); within each run the chain must hold exactly.
 // Returns {ok, badLine, runs}.
-function verifyChain(filePath) {
+function verifyChain(filePath, hmacKey) {
   const zero = "0".repeat(64);
   let prev = zero;
   let runs = 1;
@@ -210,7 +210,8 @@ function verifyChain(filePath) {
     } else if (storedPrev !== prev) {
       return { ok: false, badLine: i + 1, runs };
     }
-    const recomputed = crypto.createHash("sha256").update(tsAndLine + " " + prev, "utf8").digest("hex");
+
+    const recomputed = hmacKey ? crypto.createHmac("sha256", hmacKey).update(tsAndLine + " " + prev, "utf8").digest("hex") : crypto.createHash("sha256").update(tsAndLine + " " + prev, "utf8").digest("hex");
     if (recomputed !== storedHash) return { ok: false, badLine: i + 1, runs };
     prev = storedHash;
   }
