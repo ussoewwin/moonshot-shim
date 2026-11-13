@@ -1,6 +1,5 @@
 ' start-shim-hidden.vbs
 ' Launches all shim relays hidden at logon (no console windows).
-'   - start-shim-zai.cmd         (AutoClaw <-> Z.ai GLM relay, port 8789)
 '   - start-shim-opencode-glm.cmd (AutoClaw <-> OpenCode Go GLM relay, port 8793)
 '   - start-shim-opencode-qwen.cmd (AutoClaw <-> OpenCode Go qwen relay, port 8795)
 '   - start-shim-opencode-minimax31.cmd (AutoClaw <-> OpenCode Go MiniMax M3.1 Flash relay, port 8800)
@@ -19,14 +18,12 @@ Set WshShell = CreateObject("WScript.Shell")
 Dim fso, baseDir
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
-WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-glm.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-kimi.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-qwen.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-glm53.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-dsv41-flash.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-minimax31.cmd") & Chr(34), 0, False
-WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai-low.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-img-mcp.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-ollama-bridge.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-beam-free.cmd") & Chr(34), 0, False
