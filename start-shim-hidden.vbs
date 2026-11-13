@@ -5,6 +5,7 @@
 '   - start-shim-opencode-qwen.cmd (AutoClaw <-> OpenCode Go qwen relay, port 8795)
 '   - start-shim-opencode-minimax31.cmd (AutoClaw <-> OpenCode Go MiniMax M3.1 Flash relay, port 8800)
 '   - start-shim-opencode-dsv41-flash.cmd (AutoClaw <-> OpenCode Go DeepSeek V4.1 Flash relay, port 8798)
+'   - start-ollama-bridge.cmd (Ollama VRAM-optimized restart + bridge on 8801 for gemma4)
 '   - start-img-mcp.cmd          (img-recognition MCP server, port 19690)
 '
 ' NOTE: set-reasoning is intentionally NOT auto-run here: it rewrites
@@ -27,6 +28,7 @@ WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-dsv41-flash.c
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-minimax31.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai-low.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-img-mcp.cmd") & Chr(34), 0, False
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-ollama-bridge.cmd") & Chr(34), 0, False
 Set WshShell = Nothing
 Set fso = Nothing
 

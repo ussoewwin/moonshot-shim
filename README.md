@@ -60,7 +60,7 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-dsv41-flash.cmd` — OpenCode Go (DeepSeek V4.1 Flash, upstream id `deepseek-flash`) relay on port `8798` (`start-shim-opencode-dsv41-flash.ps1`).
 - `start-shim-opencode-minimax31.cmd` — OpenCode Go (MiniMax M3.1 Flash) relay on port `8800` (`start-shim-opencode-minimax31.ps1`).
 - `start-shim-zai-low.cmd` — Z.ai (GLM-5.3-Flash, LOW-EFFORT) relay on port `8797` (`start-shim-zai-low.ps1`).
-- `start-shim-hidden.vbs` — starts **all eight relays + the img-mcp server** hidden at logon; place in `shell:startup` for logon auto-start.
+- `start-shim-hidden.vbs` — starts **all eight relays + the img-mcp server + the ollama bridge** hidden at logon; place in `shell:startup` for logon auto-start.
 - `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
 - `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
 
