@@ -960,6 +960,24 @@ if (SHIM_SECRET && (!suppliedKey || !crypto.timingSafeEqual(suppliedDigest, expe
     if (json && typeof json === 'object' && SHIM_REASONING_EFFORT) {
       json.reasoning_effort = SHIM_REASONING_EFFORT;
     }
+    // beam-free only (FORCE_MODEL === 'beam-free'): upstream accepts
+    // reasoning_effort only for max/xhigh/high/medium/low (400
+    // unsupported_value measured 2026-11-13). 'minimal' maps to 'low';
+    // any other unsupported value is dropped so the upstream default
+    // applies. Every other instance is untouched by this branch.
+    if (json && typeof json === 'object' && FORCE_MODEL === 'beam-free' && 'reasoning_effort' in json) {
+      const effortAllowed = new Set(['max', 'xhigh', 'high', 'medium', 'low']);
+      const effortOrig = String(json.reasoning_effort).toLowerCase();
+      if (effortAllowed.has(effortOrig)) {
+        json.reasoning_effort = effortOrig;
+      } else if (effortOrig === 'minimal') {
+        json.reasoning_effort = 'low';
+        log('reasoning_effort normalized: minimal -> low (beam-free)');
+      } else {
+        delete json.reasoning_effort;
+        log("reasoning_effort removed: unsupported value " + effortOrig + " -> upstream default (beam-free)");
+      }
+    }
     if (json && Array.isArray(json.messages)) {
       const redacted = redactTail(json);
       if (redacted && DEBUG) dlog('redacted ' + redacted + ' newest-message secret pattern(s)');
