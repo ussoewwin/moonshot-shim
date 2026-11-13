@@ -21,19 +21,98 @@
 //   message.thinking               -> choices[0].message.reasoning_content
 //   prompt_eval_count / eval_count -> usage.prompt_tokens / completion_tokens
 //
+// VRAM guard (this file, env-tunable):
+//   BRIDGE_NUM_CTX      default 8192  - hard cap on options.num_ctx per request.
+//                                       gemma4 has 60 layers; ctx drives the KV cache.
+//   BRIDGE_KEEP_ALIVE   default 120   - seconds a model stays resident between calls.
+//                                       0 = unload right after each reply.
+//   BRIDGE_IDLE_UNLOAD  default 300   - seconds of bridge idleness before the model is
+//                                       unloaded proactively (frees VRAM for ComfyUI etc).
+//
 // Loopback-only binding. No auth (local only). Auto-restart handled by wrapper.
 
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 
 const PORT = parseInt(process.env.BRIDGE_PORT || '8801', 10);
 const HOST = process.env.BRIDGE_HOST || '127.0.0.1';
 const OLLAMA = (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'gemma4-31b-ara-heretic';
 const THINK = process.env.BRIDGE_THINK !== '0'; // default: let Ollama handle thinking separation
+const NUM_CTX = parseInt(process.env.BRIDGE_NUM_CTX || '8192', 10);
+const KEEP_ALIVE = parseInt(process.env.BRIDGE_KEEP_ALIVE || '120', 10);
+const IDLE_UNLOAD = parseInt(process.env.BRIDGE_IDLE_UNLOAD || '300', 10);
+// Free-VRAM floor in MiB. When a non-Ollama GPU process needs memory and free VRAM
+// drops below this, the resident model is unloaded so the other workload can run.
+const VRAM_FLOOR = parseInt(process.env.BRIDGE_VRAM_FLOOR || '2048', 10);
+// Other GPU consumers to watch (comma separated process names, no .exe).
+const GPU_PEERS = (process.env.BRIDGE_GPU_PEERS || 'python,ffmpeg,Topaz Video,brave')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
 function log(msg) {
   console.log(new Date().toISOString() + ' ' + msg);
+}
+
+let lastActivity = Date.now();
+const touchedModels = new Set();
+
+// Ask Ollama to drop a model from VRAM immediately. Ollama answers with the empty
+// generate call; the runner process then exits and the VRAM is returned.
+// Read free VRAM in MiB from nvidia-smi. Returns null when unavailable.
+let smiMissing = false;
+function freeVramMiB() {
+  if (smiMissing) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile('nvidia-smi',
+      ['--query-gpu=memory.free', '--format=csv,noheader,nounits'],
+      { timeout: 4000, windowsHide: true },
+      (err, stdout) => {
+        if (err) { smiMissing = true; return resolve(null); }
+        const n = parseInt(String(stdout).trim().split(/\s+/)[0], 10);
+        resolve(Number.isFinite(n) ? n : null);
+      });
+  });
+}
+
+// VRAM the model needs when it is loaded, in MiB. Taken from the last observed
+// /api/ps entry, or from BRIDGE_MODEL_MIB when nothing has been loaded yet.
+let modelNeedMiB = parseInt(process.env.BRIDGE_MODEL_MIB || '13500', 10);
+
+async function ollamaPs() {
+  try {
+    const r = await fetch(OLLAMA + '/api/ps');
+    const d = await r.json();
+    return d.models || [];
+  } catch {
+    return [];
+  }
+}
+
+// True when a configured peer process is running on the machine.
+function peerActive() {
+  if (GPU_PEERS.length === 0) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    execFile('tasklist', ['/fo', 'csv', '/nh'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
+      if (err) return resolve(false);
+      const low = String(stdout).toLowerCase();
+      resolve(GPU_PEERS.some((n) => low.includes(n)));
+    });
+  });
+}
+
+async function unloadModel(model) {
+  try {
+    const r = await fetch(OLLAMA + '/api/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model, keep_alive: 0 }),
+    });
+    await r.text();
+    log(`idle unload: ${model} released`);
+  } catch (e) {
+    log(`idle unload failed for ${model}: ${e.message}`);
+  }
 }
 
 function sendJSON(res, status, obj) {
@@ -68,6 +147,10 @@ function mapToOllama(openaiBody) {
   });
 
   const options = {};
+  // Context cap: an oversized num_ctx multiplies the KV cache (60 layers * 16 KV heads).
+  // Clients may ask for less; they never get more than NUM_CTX.
+  const asked = Number(openaiBody.num_ctx || openaiBody.context_length || NUM_CTX);
+  options.num_ctx = Number.isFinite(asked) && asked > 0 ? Math.min(asked, NUM_CTX) : NUM_CTX;
   if (openaiBody.max_tokens) options.num_predict = openaiBody.max_tokens;
   if (openaiBody.temperature !== undefined) options.temperature = openaiBody.temperature;
   if (openaiBody.top_p !== undefined) options.top_p = openaiBody.top_p;
@@ -80,6 +163,7 @@ function mapToOllama(openaiBody) {
     stream: !!openaiBody.stream,
     think: THINK,
   };
+  if (KEEP_ALIVE >= 0) out.keep_alive = KEEP_ALIVE;
   if (Object.keys(options).length > 0) out.options = options;
   return out;
 }
@@ -134,6 +218,36 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // vram: report the guard settings and what Ollama currently keeps resident
+  if (url.pathname === '/vram') {
+    let loaded = [];
+    try {
+      const r = await fetch(OLLAMA + '/api/ps');
+      const d = await r.json();
+      loaded = (d.models || []).map((m) => ({
+        name: m.name,
+        sizeMiB: Math.round((m.size || 0) / 1048576),
+        vramMiB: Math.round((m.size_vram || 0) / 1048576),
+        context: m.context_length || null,
+        expiresAt: m.expires_at || null,
+      }));
+    } catch (e) {
+      loaded = [{ error: e.message }];
+    }
+    sendJSON(res, 200, {
+      numCtxCap: NUM_CTX,
+      vramFloorMiB: VRAM_FLOOR,
+      gpuPeers: GPU_PEERS,
+      keepAliveSeconds: KEEP_ALIVE,
+      idleUnloadSeconds: IDLE_UNLOAD,
+      idleForSeconds: Math.round((Date.now() - lastActivity) / 1000),
+      modelNeedMiB,
+      freeVramMiB: await freeVramMiB(),
+      loaded,
+    });
+    return;
+  }
+
   // models list: proxy to Ollama native /api/tags, return OpenAI shape
   if (url.pathname === '/v1/models' || url.pathname === '/models') {
     try {
@@ -158,6 +272,13 @@ const server = http.createServer(async (req, res) => {
       try { openai = JSON.parse(raw); } catch { sendJSON(res, 400, { error: { message: 'invalid JSON' } }); return; }
 
       const ollamaBody = mapToOllama(openai);
+      lastActivity = Date.now();
+      touchedModels.add(ollamaBody.model);
+      {
+        const resident = await ollamaPs();
+        const own = resident.find((m) => (m.name || '').startsWith(ollamaBody.model));
+        if (own && own.size) modelNeedMiB = Math.round(own.size / 1048576);
+      }
       const isStream = !!openai.stream;
       const reqModel = openai.model || DEFAULT_MODEL;
 
@@ -170,7 +291,12 @@ const server = http.createServer(async (req, res) => {
 
         if (!isStream) {
           const data = await upstream.json();
-          sendJSON(res, upstream.status, mapFromOllama(data, reqModel));
+          sendJSON(res, Math.min(upstream.status, 599), mapFromOllama(data, reqModel));
+          if (KEEP_ALIVE === 0) {
+            // VRAM-first mode: the weights leave the GPU as soon as the reply is out.
+            await unloadModel(ollamaBody.model);
+            touchedModels.delete(ollamaBody.model);
+          }
           log(`${req.method} ${url.pathname} -> ${upstream.statusCode} ${Date.now() - started}ms model=${ollamaBody.model} msgs=${ollamaBody.messages.length}`);
           return;
         }
@@ -225,6 +351,38 @@ const server = http.createServer(async (req, res) => {
   // fallback: not supported
   sendJSON(res, 404, { error: { message: 'not found: ' + url.pathname + '. Supported: /v1/chat/completions, /v1/models, /healthz' } });
 });
+
+// Idle watchdog: with an idle timeout the desktop VRAM is returned to whatever else
+// needs it (ComfyUI, video tools). Kept in-process so no external scheduler is needed.
+// Budget watchdog: hand the VRAM back when another GPU workload appears.
+if (VRAM_FLOOR > 0 && GPU_PEERS.length > 0) {
+  let yielding = false;
+  setInterval(async () => {
+    if (yielding || touchedModels.size === 0) return;
+    const idleFor = (Date.now() - lastActivity) / 1000;
+    if (idleFor < 30) return; // never evict mid-conversation
+    const [free, busy] = await Promise.all([freeVramMiB(), peerActive()]);
+    if (free === null || !busy || free >= VRAM_FLOOR) return;
+    yielding = true;
+    log(`vram floor: free=${free}MiB < ${VRAM_FLOOR}MiB while a peer GPU app runs -> unloading`);
+    for (const m of [...touchedModels]) {
+      await unloadModel(m);
+      touchedModels.delete(m);
+    }
+    yielding = false;
+  }, 30000).unref();
+}
+
+if (IDLE_UNLOAD > 0) {
+  setInterval(() => {
+    const idleFor = (Date.now() - lastActivity) / 1000;
+    if (idleFor < IDLE_UNLOAD) return;
+    for (const m of [...touchedModels]) {
+      unloadModel(m);
+      touchedModels.delete(m);
+    }
+  }, Math.max(15, Math.min(60, Math.floor(IDLE_UNLOAD / 2))) * 1000).unref();
+}
 
 server.listen(PORT, HOST, () => {
   log(`ollama-bridge listening on http://${HOST}:${PORT}`);

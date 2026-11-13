@@ -1,51 +1,52 @@
 @echo off
 REM ============================================================
 REM  start-ollama-bridge.cmd
-REM  Auto-start: Ollama VRAM-optimized restart + bridge on 8801.
-REM  Called from start-shim-hidden.vbs at logon (after other relays).
+REM
+REM  Start the OpenAI-compatible bridge for the local Ollama model
+REM  on port 8801. Called from start-shim-hidden.vbs at logon.
+REM
+REM  VRAM-first settings:
+REM    BRIDGE_KEEP_ALIVE=0     unload the model as soon as a reply is out,
+REM                            so the weights never sit on the GPU while
+REM                            ComfyUI / Topaz / other work needs it.
+REM    BRIDGE_VRAM_FLOOR=2048  if free VRAM drops below this while a peer
+REM                            GPU app runs, release the model.
+REM    BRIDGE_NUM_CTX=8192     context cap (KV cache is 10 full + 50 SWA layers).
+REM
+REM  Note: the VRAM values themselves come from Ollama's own process
+REM  environment - see start-ollama-optimized.cmd.
 REM ============================================================
 
 setlocal
 
-REM Wait for Ollama API to be ready (max 30s)
+REM Wait for Ollama API to be ready (max 30s), otherwise skip
 set /a tries=0
 :wait_ollama
-timeout /t 2 /nobreak >nul 2>&1
-set /a tries+=1
 curl -s -o nul http://127.0.0.1:11434/api/version 2>nul
-if %errorlevel% neq 0 (
-  if %tries% lss 15 goto wait_ollama
-  echo OLLAMA NOT READY after %tries% tries - skipping bridge
+if %errorlevel% equ 0 goto ollama_ready
+set /a tries+=1
+if %tries% geq 15 (
+  echo OLLAMA NOT READY after %tries% checks - bridge not started
+  goto :eof
+)
+timeout /t 2 /nobreak >nul 2>&1
+goto wait_ollama
+
+:ollama_ready
+
+REM Skip if the bridge is already listening on 8801
+curl -s -o nul http://127.0.0.1:8801/healthz 2>nul
+if %errorlevel% equ 0 (
+  echo bridge already listening on 8801
   goto :eof
 )
 
-REM VRAM optimization: restart Ollama with flash attention + KV cache q8_0 + single slot
-REM (only kills llama-server, the main ollama daemon stays alive)
-taskkill /f /im llama-server.exe >nul 2>&1
+set BRIDGE_KEEP_ALIVE=0
+set BRIDGE_VRAM_FLOOR=2048
+set BRIDGE_NUM_CTX=8192
 
-REM Set optimized env vars for the next llama-server spawn
-REM These are inherited by ollama's llama-server child processes
-REM (ollama main process reads its own env, but passes these to llama-server)
-
-REM Note: env vars must be set on the ollama main process to propagate.
-REM Since ollama is already running, we set them system-wide for next boot
-REM and restart llama-server manually with them:
-
-setx OLLAMA_FLASH_ATTENTION 1 >nul 2>&1
-setx OLLAMA_KV_CACHE_TYPE q8_0 >nul 2>&1
-setx OLLAMA_NUM_PARALLEL 1 >nul 2>&1
-setx OLLAMA_MAX_LOADED_MODELS 1 >nul 2>&1
-
-REM Also set for this session
-set OLLAMA_FLASH_ATTENTION=1
-set OLLAMA_KV_CACHE_TYPE=q8_0
-set OLLAMA_NUM_PARALLEL=1
-set OLLAMA_MAX_LOADED_MODELS=1
-
-REM Start the bridge on 8801
-cd /d "D:\USERFILES\GitHub\moonshot-shim"
+cd /d "%~dp0"
 start /b "" node ollama-bridge.mjs
-
-echo ollama-bridge started on port 8801
+echo ollama-bridge started on port 8801 (keep_alive=0, vram floor 2048 MiB)
 
 endlocal

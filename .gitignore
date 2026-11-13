@@ -42,3 +42,6 @@ shim-guard.heads
 
 # Local GGUF models (too large for git)
 llm/
+
+# llama-server VRAM experiment logs
+llama-server-vram.log*
