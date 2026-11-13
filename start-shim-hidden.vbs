@@ -29,6 +29,7 @@ WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-opencode-minimax31.cmd
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-zai-low.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-img-mcp.cmd") & Chr(34), 0, False
 WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-ollama-bridge.cmd") & Chr(34), 0, False
+WshShell.Run Chr(34) & fso.BuildPath(baseDir, "start-shim-beam-free.cmd") & Chr(34), 0, False
 Set WshShell = Nothing
 Set fso = Nothing
 
