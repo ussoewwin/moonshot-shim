@@ -60,6 +60,7 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-dsv41-flash.cmd` — OpenCode Go (DeepSeek V4.1 Flash, upstream id `deepseek-flash`) relay on port `8798` (`start-shim-opencode-dsv41-flash.ps1`).
 - `start-shim-opencode-minimax31.cmd` — OpenCode Go (MiniMax M3.1 Flash) relay on port `8800` (`start-shim-opencode-minimax31.ps1`).
 - `start-shim-zai-low.cmd` — Z.ai (GLM-5.3-Flash, LOW-EFFORT) relay on port `8797` (`start-shim-zai-low.ps1`).
+- `start-shim-beam-free.cmd` — OpenCode Go (Beam Free, upstream id `beam-free`, model pinned) relay on port `8802` (`start-shim-beam-free.ps1`).
 - `start-shim-hidden.vbs` — starts **all eight relays + the img-mcp server + the ollama bridge** hidden at logon; place in `shell:startup` for logon auto-start.
 - `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
 - `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
@@ -89,6 +90,7 @@ The shim is target-agnostic — run one instance per provider, each on its own p
 | OpenCode Go (qwen3.8-flash) | `start-shim-opencode-qwen.cmd` | `8795` | `https://opencode.ai/zen/go/v1` |
 | OpenCode Go (GLM-5.3) | `start-shim-opencode-glm53.cmd` | `8796` | `https://opencode.ai/zen/go/v1` |
 | OpenCode Go (MiniMax M3.1 Flash) | `start-shim-opencode-minimax31.cmd` | `8800` | `https://opencode.ai/zen/go/v1` |
+| OpenCode Go (Beam Free) | `start-shim-beam-free.cmd` | `8802` | `https://opencode.ai/zen/go/v1` |
 | OpenCode Go (DeepSeek V4.1 Flash) | `start-shim-opencode-dsv41-flash.cmd` | `8798` | `https://opencode.ai/zen/go/v1` |
 
 All of them require `reasoning_content` on assistant messages, so the patcher applies unchanged. The only provider-specific difference is the cache-field layout, which the shim reads either way. To add another provider, copy `start-shim-opencode-kimi.ps1`, change `SHIM_TARGET` + `SHIM_PORT`, add a `.cmd` wrapper and a VBS line, then update this table (and [MCP.md](./MCP.md) if the new provider is an MCP tool).
@@ -103,6 +105,7 @@ Set your client's **OpenAI base URL** to the shim's `/v1` endpoint and keep usin
 - OpenCode Go (qwen3.8-flash) → `http://127.0.0.1:8795/v1`
 - OpenCode Go (GLM-5.3) → `http://127.0.0.1:8796/v1`
 - OpenCode Go (MiniMax M3.1 Flash) → `http://127.0.0.1:8800/v1`
+- OpenCode Go (Beam Free) → `http://127.0.0.1:8802/v1`
 - Z.ai (GLM-5.3-Flash, LOW-EFFORT) → `http://127.0.0.1:8797/v1`
 - OpenCode Go (DeepSeek V4.1 Flash) → `http://127.0.0.1:8798/v1`
 
