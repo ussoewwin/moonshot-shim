@@ -25,6 +25,9 @@ Set-Location -Path $PSScriptRoot
 $env:SHIM_PORT = '8802'
 $env:SHIM_TARGET = 'https://opencode.ai/zen/go/v1'
 $env:SHIM_FORCE_MODEL = 'beam-free'
+# Dual-stack listen: clients that resolve "localhost" to ::1 must reach
+# this relay too (measured: [::1]:8802 was refused while 127.0.0.1 worked).
+$env:SHIM_HOST = '::'
 $env:SHIM_LOOPBACK_ONLY = '1'  # hardening: reject non-loopback clients
 $env:SHIM_REDACT_TAIL   = '1'  # hardening: redact secrets in newest message only (prefix untouched -> cache preserved)
 
