@@ -11,7 +11,6 @@ client ──▶ http://127.0.0.1:8798/v1 ──▶ https://opencode.ai/zen/go/v
 client ──▶ http://127.0.0.1:8800/v1 ──▶ https://opencode.ai/zen/go/v1         (MiniMax M3.1 Flash via OpenCode Go, thinking forced)
 client ──▶ http://127.0.0.1:8801/v1 ──▶ http://127.0.0.1:11434/v1           (local Ollama, gemma4-31b-ara-heretic via ollama-bridge.mjs)
 client ──▶ http://127.0.0.1:8802/v1 ──▶ https://opencode.ai/zen/go/v1         (Beam Free via OpenCode Go, model pinned, reasoning_effort normalized)
-client ──▶ http://127.0.0.1:8803/v1 ──▶ https://opencode.ai/zen/go/v1         (LongCat 2.5 Free via OpenCode Go, model pinned, 100 req/day)
                 (one shim instance per provider line; env vars decide port + target)
 ```
 
@@ -62,8 +61,7 @@ On Windows, use the bundled launchers (each auto-restarts the process if it cras
 - `start-shim-opencode-minimax31.cmd` — OpenCode Go (MiniMax M3.1 Flash) relay on port `8800` (`start-shim-opencode-minimax31.ps1`).
 - `start-shim-ollama-bridge.cmd` — local Ollama (gemma4-31b-ara-heretic) bridge on port `8801` (`ollama-bridge.mjs`, runs via `start-ollama-bridge.cmd`).
 - `start-shim-beam-free.cmd` — OpenCode Go (Beam Free, upstream id `beam-free`, model pinned) relay on port `8802` (`start-shim-beam-free.ps1`).
-- `start-shim-longcat-free.cmd` — OpenCode Go (LongCat 2.5 Free, upstream id `longcat-2.5-free`, model pinned) relay on port `8803` (`start-shim-longcat-free.ps1`). 100 requests/day; hosted in China, so the Go workspace privacy settings must allow Global regions.
-- `start-shim-hidden.vbs` — starts **all nine relays + the img-mcp server + the ollama bridge** hidden at logon; place in `shell:startup` for logon auto-start.
+- `start-shim-hidden.vbs` — starts **all eight relays + the img-mcp server + the ollama bridge** hidden at logon; place in `shell:startup` for logon auto-start.
 - `start-img-mcp.cmd` — image-recognition MCP server on port `19690` (see [MCP.md](./MCP.md)).
 - `set-reasoning.cmd` / `set-reasoning.mjs` — one-shot helper that flips `reasoning: false -> true` for every custom-provider model in AutoClaw's config files (`settings.json` `models.catalog`, `openclaw.json`, `openclaw.runtime.json`). AutoClaw's UI has no reasoning toggle for custom models, and a `reasoning: false` model hides thinking output even when the provider emits it. Run while AutoClaw is closed, then restart AutoClaw:
 
@@ -92,7 +90,6 @@ The shim is target-agnostic — run one instance per provider, each on its own p
 | OpenCode Go (MiniMax M3.1 Flash) | `start-shim-opencode-minimax31.cmd` | `8800` | `https://opencode.ai/zen/go/v1` |
 | local Ollama (gemma4-31b-ara-heretic) | `start-ollama-bridge.cmd` | `8801` | `http://127.0.0.1:11434/v1` (native `/api/chat`) |
 | OpenCode Go (Beam Free) | `start-shim-beam-free.cmd` | `8802` | `https://opencode.ai/zen/go/v1` |
-| OpenCode Go (LongCat 2.5 Free) | `start-shim-longcat-free.cmd` | `8803` | `https://opencode.ai/zen/go/v1` |
 | OpenCode Go (DeepSeek V4.1 Flash) | `start-shim-opencode-dsv41-flash.cmd` | `8798` | `https://opencode.ai/zen/go/v1` |
 
 All of them require `reasoning_content` on assistant messages, so the patcher applies unchanged. The only provider-specific difference is the cache-field layout, which the shim reads either way. To add another provider, copy `start-shim-opencode-kimi.ps1`, change `SHIM_TARGET` + `SHIM_PORT`, add a `.cmd` wrapper and a VBS line, then update this table (and [MCP.md](./MCP.md) if the new provider is an MCP tool).
@@ -108,7 +105,6 @@ Set your client's **OpenAI base URL** to the shim's `/v1` endpoint and keep usin
 - OpenCode Go (MiniMax M3.1 Flash) → `http://127.0.0.1:8800/v1`
 - local Ollama (gemma4-31b-ara-heretic) → `http://127.0.0.1:8801/v1`
 - OpenCode Go (Beam Free) → `http://127.0.0.1:8802/v1`
-- OpenCode Go (LongCat 2.5 Free) → `http://127.0.0.1:8803/v1`
 - OpenCode Go (DeepSeek V4.1 Flash) → `http://127.0.0.1:8798/v1`
 
 No tunnel is required. The shim binds to `127.0.0.1` and is meant for a single machine.
